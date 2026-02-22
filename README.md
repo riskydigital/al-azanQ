@@ -1,4 +1,4 @@
-# Al-Azan
+# Al-AzanQ (Qamariyah Date Version - Change on maghrib)
 
 an open-source Adhan (أذان) - prayer times application built using react-native.
 

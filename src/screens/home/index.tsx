@@ -43,11 +43,22 @@ type DayDetails = {
   arabicDate: string;
 };
 
-function getDayDetails(date: Date): DayDetails {
+// Tambahkan parameter maghribTime
+function getDayDetails(date: Date, maghribTime?: Date): DayDetails {
+  const now = new Date(); // Ambil waktu aktual saat ini
+
+  // Cek apakah waktu saat ini (jam dan menit) sudah melewati jam Maghrib hari ini
+  let isPastMaghrib = false;
+  if (maghribTime) {
+    // Kita gunakan waktu aktual (now) untuk membandingkan, bukan date kalender
+    isPastMaghrib = now.getTime() >= maghribTime.getTime();
+  }
+
   return {
     dayName: getDayName(date),
     dateString: getFormattedDate(date),
-    arabicDate: getArabicDate(date),
+    // Kirim status isPastMaghrib ke fungsi getArabicDate yang sudah kita edit di date.ts
+    arabicDate: getArabicDate(date, isPastMaghrib), 
   };
 }
 
@@ -88,7 +99,11 @@ export function Home() {
 
   const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate]);
 
-  const day = useMemo(() => getDayDetails(currentDate), [currentDate]);
+// Kita pastikan mengambil objek maghrib dari hasil kalkulasi prayerTimes
+  const day = useMemo(
+    () => getDayDetails(currentDate, prayerTimes?.maghrib), 
+    [currentDate, prayerTimes] // Tambahkan prayerTimes ke dependency array
+  );
 
   useEffect(() => {
     askPermissions().finally(async () => {

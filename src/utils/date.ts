@@ -373,9 +373,12 @@ export function getMonthName(date: Date, hijri?: boolean) {
   }
 }
 
-export function getYearAndMonth(date: Date, hijri?: boolean) {
+// Tambahkan isPastMaghrib di akhir parameter
+export function getYearAndMonth(date: Date, hijri?: boolean, isPastMaghrib: boolean = false) {
   if (hijri) {
-    const adjustedDate = addDays(date, HIJRI_DATE_ADJUSTMENT);
+    // Ubah adjustment-nya di sini
+    const finalAdjustment = isPastMaghrib ? HIJRI_DATE_ADJUSTMENT + 1 : HIJRI_DATE_ADJUSTMENT;
+    const adjustedDate = addDays(date, finalAdjustment);
 
     return Intl.DateTimeFormat(SELECTED_LOCALE_FOR_ARABIC_CALENDAR, {
       year: 'numeric',
@@ -440,15 +443,18 @@ export function getTime(date: Date) {
   }
 }
 
-export function getArabicMonthName(date: Date) {
-  const adjustedDate = addDays(date, HIJRI_DATE_ADJUSTMENT);
+export function getArabicMonthName(date: Date, isPastMaghrib: boolean = false) {
+  const finalAdjustment = isPastMaghrib ? HIJRI_DATE_ADJUSTMENT + 1 : HIJRI_DATE_ADJUSTMENT;
+  const adjustedDate = addDays(date, finalAdjustment);
+  
   return Intl.DateTimeFormat(SELECTED_LOCALE_FOR_ARABIC_CALENDAR, {
     month: 'long',
   }).format(adjustedDate);
 }
 
-export function getArabicDate(date: Date) {
-  const adjustedDate = addDays(date, HIJRI_DATE_ADJUSTMENT);
+export function getArabicDate(date: Date, isPastMaghrib: boolean = false) {
+  const finalAdjustment = isPastMaghrib ? HIJRI_DATE_ADJUSTMENT + 1 : HIJRI_DATE_ADJUSTMENT;
+  const adjustedDate = addDays(date, finalAdjustment);
 
   return Intl.DateTimeFormat(SELECTED_LOCALE_FOR_ARABIC_CALENDAR, {
     day: '2-digit',
@@ -457,24 +463,27 @@ export function getArabicDate(date: Date) {
   }).format(adjustedDate);
 }
 
-export function getHijriYear(date: Date) {
-  const adjustedDate = addDays(date, HIJRI_DATE_ADJUSTMENT);
+export function getHijriYear(date: Date, isPastMaghrib: boolean = false) {
+  const finalAdjustment = isPastMaghrib ? HIJRI_DATE_ADJUSTMENT + 1 : HIJRI_DATE_ADJUSTMENT;
+  const adjustedDate = addDays(date, finalAdjustment);
 
   return Intl.DateTimeFormat(SELECTED_LOCALE_FOR_ARABIC_CALENDAR, {
     year: 'numeric',
   }).format(adjustedDate);
 }
 
-export function getHijriMonth(date: Date) {
-  const adjustedDate = addDays(date, HIJRI_DATE_ADJUSTMENT);
+export function getHijriMonth(date: Date, isPastMaghrib: boolean = false) {
+  const finalAdjustment = isPastMaghrib ? HIJRI_DATE_ADJUSTMENT + 1 : HIJRI_DATE_ADJUSTMENT;
+  const adjustedDate = addDays(date, finalAdjustment);
 
   return Intl.DateTimeFormat(SELECTED_LOCALE_FOR_ARABIC_CALENDAR, {
     month: 'numeric',
   }).format(adjustedDate);
 }
 
-export function getHijriDay(date: Date) {
-  const adjustedDate = addDays(date, HIJRI_DATE_ADJUSTMENT);
+export function getHijriDay(date: Date, isPastMaghrib: boolean = false) {
+  const finalAdjustment = isPastMaghrib ? HIJRI_DATE_ADJUSTMENT + 1 : HIJRI_DATE_ADJUSTMENT;
+  const adjustedDate = addDays(date, finalAdjustment);
 
   return Intl.DateTimeFormat(
     addNumberingToLocale(SELECTED_LOCALE_FOR_ARABIC_CALENDAR, NUMBERING_SYSTEM),

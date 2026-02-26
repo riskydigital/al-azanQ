@@ -105,8 +105,8 @@ android {
 		applicationId "com.github.meypod.al_azanq"
 		minSdkVersion rootProject.ext.minSdkVersion
 		targetSdkVersion rootProject.ext.targetSdkVersion
-		versionCode 78
-		versionName "1.17.11" 
+		versionCode 200
+		versionName "2.0.0" 
 		if (!project.hasProperty("noSign")) { 
 			signingConfig signingConfigs.debug
 			println("debug signing the builds by default")

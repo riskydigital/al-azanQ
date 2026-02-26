@@ -44,12 +44,9 @@ type DayDetails = {
 	arabicDate: string;
 };
 
-function getDayDetails(date: Date, maghribTime?: Date, autoAdjustment: number = 0): DayDetails {
-    const now = new Date(); 
-    let isPastMaghrib = false;
-    if (maghribTime) {
-        isPastMaghrib = now.getTime() >= maghribTime.getTime();
-	}
+// Tambahkan parameter ke-4: isPastMaghrib
+function getDayDetails(date: Date, maghribTime?: Date, autoAdjustment: number = 0, isPastMaghrib: boolean = false): DayDetails {
+    // Hapus baris "const now = new Date(); ..." dari sini
     
     const hijriTargetDate = new Date(date);
     if (autoAdjustment !== 0) {
@@ -110,9 +107,34 @@ export function Home() {
 	const minElongation = useStore(settings, s => s.HILAL_MIN_ELONGATION);
 	// ---------------------------------------------------
 	
+	// 🔥 ALARM PENDETEKSI MAGHRIB REAL-TIME
+	const [isPastMaghrib, setIsPastMaghrib] = useState(false);
+	
+	useEffect(() => {
+		if (!prayerTimes?.maghrib) return;
+		
+		const maghribTime = prayerTimes.maghrib.getTime();
+		const now = Date.now();
+		
+		// Jika saat aplikasi dibuka sudah lewat Maghrib
+		if (now >= maghribTime) {
+			setIsPastMaghrib(true);
+			} else {
+			// Jika belum Maghrib, pasang alarm (timeout) agar me-refresh persis saat Maghrib tiba!
+			setIsPastMaghrib(false);
+			const timeout = setTimeout(() => {
+				setIsPastMaghrib(true);
+			}, maghribTime - now);
+			
+			return () => clearTimeout(timeout); // Bersihkan alarm jika ganti hari
+		}
+	}, [prayerTimes]);
+	// --------------------------------------------------- ---------------------------------------------------
+	
 	const day = useMemo(
-	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment),
-	[currentDate, prayerTimes, autoAdjustment]
+	// Masukkan isPastMaghrib sebagai parameter ke-4
+	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib),
+	[currentDate, prayerTimes, autoAdjustment, isPastMaghrib] // Wajib tambahkan isPastMaghrib di dalam kurung siku ini!
 	);
 	
 	// 1. ---  DASBOR HILAL  ---
@@ -197,9 +219,9 @@ export function Home() {
 				
 				const calculatedAdjustment = uqMonthLength - mabimsMonthLength;
 				if (isEligible) {
-				 infoHilal = "Memenuhi Syarat Visibilitas";
-				} else {
-				 infoHilal = "Belum Terlihat (Istikmal)";
+					infoHilal = "Memenuhi Syarat Visibilitas";
+					} else {
+					infoHilal = "Belum Terlihat (Istikmal)";
 				}
 				setTmDebug(`----------------------------------\nTeropong Akhir Bulan lalu\nIR: ON \n PastAlt: ${pastAlt.toFixed(2)} vs CAlt: ${targetAlt} \n PastAlt : ${pastElong.toFixed(2)} vs  CElng : ${targetElong} \n Adj = ${calculatedAdjustment}\nHasil : ${infoHilal}`);
 				setAutoAdjustment(calculatedAdjustment);
@@ -404,7 +426,7 @@ export function Home() {
 		textAlign="center"
 		>
 		{hilalInfo.isMabimsEligible 
-		? '✅ Maghrib [nanti] memenuhi Syarat (Visibilitas)' 
+			? '✅ Maghrib [nanti] memenuhi Syarat (Visibilitas)' 
 		: '❌ Belum Terlihat (Istikmal)'}
 		</Text>
 		</Box>

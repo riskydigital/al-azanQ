@@ -62,7 +62,7 @@ export function getHilalData(
   const sunEquator = Astronomy.Equator('Sun', maghribAstroTime, observer, true, true);
   const elongation = Astronomy.AngleBetween(sunEquator.vec, moonEquator.vec);
 
-  // --- 5. EVALUASI KRITERIA MABIMS BARU ---
+  // --- 5. DEFAULT EVALUASI KRITERIA MABIMS BARU BISA BERUBAH LIVE SESUAI KONSTANTA SETING---
   // MABIMS mensyaratkan: Tinggi minimal 3 derajat DAN Elongasi minimal 6.4 derajat
   const isMabimsEligible = moonAltitude >= 3 && elongation >= 6.4;
 

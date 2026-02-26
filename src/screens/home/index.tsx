@@ -1,8 +1,6 @@
 import {t} from '@lingui/macro';
 import {Button, HStack, ScrollView, Stack, Text, Box} from 'native-base'; // Tambahkan Box
 import {useCallback, useEffect, useMemo, useState} from 'react'; // Tambahkan useState
-
-// Tambahkan import hilalCalculator di bawah import lainnya:
 import {getHilalData, HilalInfo} from '@/utils/hilalCalculator';
 import {
 	Gesture,
@@ -46,22 +44,22 @@ type DayDetails = {
 	arabicDate: string;
 };
 
-// Tambahkan parameter maghribTime
-function getDayDetails(date: Date, maghribTime?: Date): DayDetails {
-	const now = new Date(); // Ambil waktu aktual saat ini
-	
-	// Cek apakah waktu saat ini (jam dan menit) sudah melewati jam Maghrib hari ini
-	let isPastMaghrib = false;
-	if (maghribTime) {
-		// Kita gunakan waktu aktual (now) untuk membandingkan, bukan date kalender
-		isPastMaghrib = now.getTime() >= maghribTime.getTime();
+function getDayDetails(date: Date, maghribTime?: Date, autoAdjustment: number = 0): DayDetails {
+    const now = new Date(); 
+    let isPastMaghrib = false;
+    if (maghribTime) {
+        isPastMaghrib = now.getTime() >= maghribTime.getTime();
+	}
+    
+    const hijriTargetDate = new Date(date);
+    if (autoAdjustment !== 0) {
+        hijriTargetDate.setDate(hijriTargetDate.getDate() + autoAdjustment);
 	}
 	
-	return {
-		dayName: getDayName(date),
-		dateString: getFormattedDate(date),
-		// Kirim status isPastMaghrib ke fungsi getArabicDate yang sudah kita edit di date.ts
-		arabicDate: getArabicDate(date, isPastMaghrib), 
+    return {
+        dayName: getDayName(date),
+        dateString: getFormattedDate(date),
+        arabicDate: getArabicDate(hijriTargetDate, isPastMaghrib), 
 	};
 }
 
@@ -99,53 +97,113 @@ export function Home() {
 	);
 	
 	const location = useStore(calcSettings, s => s.LOCATION);
-	
 	const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate]);
 	
-	const day = useMemo(
-	() => getDayDetails(currentDate, prayerTimes?.maghrib),
-	[currentDate, prayerTimes]
-	);
-	
-	// --- MASUKKAN KODE INI DI SINI ---
 	const [hilalInfo, setHilalInfo] = useState<HilalInfo | null>(null);
 	const [hilalDebug, setHilalDebug] = useState<string>("Inisialisasi awal...");
+	const [autoAdjustment, setAutoAdjustment] = useState<number>(0);
+	const [tmDebug, setTmDebug] = useState<string>("TM: Loading...");
 	
+	// 🔥 AMBIL SAKLAR DAN ANGKA DARI GUDANG SETTINGS
+	const useCustomHilal = useStore(settings, s => s.USE_CUSTOM_HILAL_CRITERIA);
+	const minAltitude = useStore(settings, s => s.HILAL_MIN_ALTITUDE);
+	const minElongation = useStore(settings, s => s.HILAL_MIN_ELONGATION);
+	// ---------------------------------------------------
+	
+	const day = useMemo(
+	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment),
+	[currentDate, prayerTimes, autoAdjustment]
+	);
+	
+	// 1. ---  DASBOR HILAL  ---
 	useEffect(() => {
-		// SEKARANG KITA PAKAI KATA SANDI YANG BENAR: lat dan long !
 		const lat = location?.lat;
 		const lon = location?.long;
 		const maghrib = prayerTimes?.maghrib;
 		
-		if (!lat || !lon) {
-			setHilalDebug("Menunggu GPS / Lokasi...");
-			return;
-		}
-		
-		if (!maghrib) {
-			setHilalDebug("Menunggu jadwal waktu Maghrib...");
-			return;
-		}
+		if (!lat || !lon || !maghrib) return;
 		
 		try {
-			// Pastikan format Date yang masuk ke mesin Astronomi valid
 			const maghribDate = new Date(maghrib);
+			if (isNaN(maghribDate.getTime())) return;
 			
-			// Cek apakah tanggalnya valid
-			if (isNaN(maghribDate.getTime())) {
-				setHilalDebug("Error: Format Waktu Maghrib tidak valid!");
-				return;
-			}
-			
-			// Masukkan ke mesin penggilingan Hilal!
 			const data = getHilalData(maghribDate, lat, lon);
+            
+			const currentAlt = Number(data?.altitude ?? data?.alt ?? data?.moonAltitude ?? 0);
+			const currentElong = Number(data?.elongation ?? data?.elong ?? data?.moonElongation ?? 0);
+			
+			const targetAlt = Number(minAltitude) || 0;
+			const targetElong = Number(minElongation) || 0;
+			
+			data.isMabimsEligible = (currentAlt >= targetAlt) && (currentElong >= targetElong);
+            
 			setHilalInfo(data);
-			setHilalDebug(""); // Sukses! Kosongkan pesan error
+			setHilalDebug(`Alt:${currentAlt.toFixed(2)}° >= Tgt:${targetAlt}° ? ${data.isMabimsEligible}`); 
 			
 			} catch (error: any) {
-			setHilalDebug("Mesin Astronomi Error: " + (error.message || "Unknown error"));
+			setHilalDebug("Error Dasbor: " + (error.message || "Unknown error"));
 		}
-	}, [prayerTimes, location]);
+	}, [prayerTimes, location, minAltitude, minElongation]); 
+	
+	// 2. --- HILAL ---
+	useEffect(() => {
+		if (!useCustomHilal) {
+			setAutoAdjustment(0);
+			setTmDebug("TM: OFF (Standar Global)");
+			return;
+		}
+		
+		const lat = location?.lat;
+		const lon = location?.long;
+		if (!lat || !lon) return;
+		
+		try {
+			const formatter = new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura', { day: 'numeric' });
+			const monthFormatter = new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura', { month: 'numeric' });
+			
+			let observationDate = new Date(currentDate);
+			let guard = 0; let found29th = false;
+			const currentUqMonth = monthFormatter.format(observationDate);
+			
+			while (guard < 40) {
+				const uqDay = parseInt(formatter.format(observationDate), 10);
+				const uqMonth = monthFormatter.format(observationDate);
+				if (uqDay === 29 && uqMonth !== currentUqMonth) { found29th = true; break; }
+				observationDate.setDate(observationDate.getDate() - 1);
+				guard++;
+			}
+			
+			if (found29th) {
+				const pastPrayerTimes = getPrayerTimes(observationDate);
+				let pastMaghrib = pastPrayerTimes?.maghrib || new Date(observationDate);
+				if (!pastPrayerTimes?.maghrib) pastMaghrib.setHours(18, 0, 0, 0);
+				
+				const pastHilal = getHilalData(pastMaghrib, lat, lon);
+				
+				const pastAlt = Number(pastHilal?.altitude ?? pastHilal?.alt ?? pastHilal?.moonAltitude ?? 0);
+				const pastElong = Number(pastHilal?.elongation ?? pastHilal?.elong ?? pastHilal?.moonElongation ?? 0);
+				
+				const targetAlt = Number(minAltitude) || 0;
+				const targetElong = Number(minElongation) || 0;
+				
+				const isEligible = (pastAlt >= targetAlt) && (pastElong >= targetElong);
+				const mabimsMonthLength = isEligible ? 29 : 30;
+				
+				const dayAfter29 = new Date(observationDate);
+				dayAfter29.setDate(dayAfter29.getDate() + 1);
+				const uqDayAfter29 = parseInt(formatter.format(dayAfter29), 10);
+				const uqMonthLength = uqDayAfter29 === 1 ? 29 : 30;
+				
+				const calculatedAdjustment = uqMonthLength - mabimsMonthLength;
+				
+				setTmDebug(`----------------------------------\nTeropong Akhir Bulan lalu\nIR: ON \n PastAlt: ${pastAlt.toFixed(2)} vs CAlt: ${targetAlt} \n PastAlt : ${pastElong.toFixed(2)} vs  CElng : ${targetElong} \n Adj = ${calculatedAdjustment}`);
+				setAutoAdjustment(calculatedAdjustment);
+			}
+			} catch (error: any) {
+			setTmDebug("TM Error: " + error.message);
+			setAutoAdjustment(0);
+		}
+	}, [currentDate, location, useCustomHilal, minAltitude, minElongation]);
 	// ---------------------------------
 	
 	useEffect(() => {
@@ -309,9 +367,9 @@ export function Home() {
 	Info Hilal MABIMS 🌙
 	</Text>
 	<Text fontSize="md" color="#D4AF37" mb="2" textAlign="center">
-	(Saat Maghrib)
+	(Saat Maghrib [Nanti])
 	</Text>	
-	{/* Tampilkan pesan Debug jika belum ada hasil */}
+	{/* Tampilkan pesan Debug */}
 	{!hilalInfo ? (
 		<Text textAlign="center" fontWeight="bold" color="red.500" mt="2">
 		⏳ {hilalDebug}
@@ -341,12 +399,27 @@ export function Home() {
 		textAlign="center"
 		>
 		{hilalInfo.isMabimsEligible 
-			? '✅ Memenuhi Syarat (Bulan Baru)' 
+		? '✅ Maghrib [nanti] memenuhi Syarat (Visibilitas)' 
 		: '❌ Belum Terlihat (Istikmal)'}
 		</Text>
 		</Box>
 	)}
+	
+	<Text
+	key={impactfulSettings.SELECTED_ARABIC_CALENDAR}
+	fontSize="md"
+	textAlign="center">
+	{day.arabicDate}
+	</Text>
+	
+	{/* --- DEBUG PRINT--- */}
+	<Text textAlign="center" fontSize="xs" color="gray.400" mt="1">
+	{tmDebug}
+	</Text>
+	{/* ---------------------------------- */}
 	</Box>
+	
+	{/* ---------------------------------- */}
 	{/* --- SELESAI DASHBOARD HILAL --- */}
 	
 	{location && (

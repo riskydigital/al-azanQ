@@ -149,12 +149,13 @@ export function Home() {
 	useEffect(() => {
 		if (!useCustomHilal) {
 			setAutoAdjustment(0);
-			setTmDebug("TM: OFF (Standar Global)");
+			setTmDebug("TM: OFF (Penanggalan Sederhana)");
 			return;
 		}
 		
 		const lat = location?.lat;
 		const lon = location?.long;
+		let  infoHilal = "test";
 		if (!lat || !lon) return;
 		
 		try {
@@ -195,8 +196,12 @@ export function Home() {
 				const uqMonthLength = uqDayAfter29 === 1 ? 29 : 30;
 				
 				const calculatedAdjustment = uqMonthLength - mabimsMonthLength;
-				
-				setTmDebug(`----------------------------------\nTeropong Akhir Bulan lalu\nIR: ON \n PastAlt: ${pastAlt.toFixed(2)} vs CAlt: ${targetAlt} \n PastAlt : ${pastElong.toFixed(2)} vs  CElng : ${targetElong} \n Adj = ${calculatedAdjustment}`);
+				if (isEligible) {
+				 infoHilal = "Memenuhi Syarat Visibilitas";
+				} else {
+				 infoHilal = "Belum Terlihat (Istikmal)";
+				}
+				setTmDebug(`----------------------------------\nTeropong Akhir Bulan lalu\nIR: ON \n PastAlt: ${pastAlt.toFixed(2)} vs CAlt: ${targetAlt} \n PastAlt : ${pastElong.toFixed(2)} vs  CElng : ${targetElong} \n Adj = ${calculatedAdjustment}\nHasil : ${infoHilal}`);
 				setAutoAdjustment(calculatedAdjustment);
 			}
 			} catch (error: any) {
@@ -363,11 +368,11 @@ export function Home() {
 	borderColor="#D4AF37"
 	_dark={{ bg: 'gray.800', borderColor: '#D4AF37' }} 
 	>
-	<Text fontSize="md" fontWeight="bold" color="#D4AF37" mb="2" textAlign="center">
+	<Text fontSize="md" fontWeight="bold" color="#D4AF37"  textAlign="center">
 	Info Hilal MABIMS 🌙
 	</Text>
-	<Text fontSize="md" color="#D4AF37" mb="2" textAlign="center">
-	(Saat Maghrib [Nanti])
+	<Text color="#D4AF37" mb="2" textAlign="center">
+	(Saat Maghrib)
 	</Text>	
 	{/* Tampilkan pesan Debug */}
 	{!hilalInfo ? (

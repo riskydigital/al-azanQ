@@ -85,7 +85,7 @@ export const calcSettings = createStore<CalcSettingsStore>()(
       LOCATION_LAT: undefined,
       LOCATION_LONG: undefined,
       LOCATION: undefined,
-      CALCULATION_METHOD_KEY: undefined,
+      CALCULATION_METHOD_KEY: 'Kemenag',
       HIGH_LATITUDE_RULE: undefined,
       ASR_CALCULATION: Madhab.Shafi,
       SHAFAQ: Shafaq.General,

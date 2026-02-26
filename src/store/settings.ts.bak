@@ -143,7 +143,7 @@ persist(
 	LOCATION_COUNTRY: undefined,
 	LOCATION_CITY: undefined,
 	HIDDEN_PRAYERS: [Prayer.Tahajjud],
-	ADHAN_VOLUME: 80,
+	ADHAN_VOLUME: 70,
 	// widget
 	HIDDEN_WIDGET_PRAYERS: [Prayer.Sunset, Prayer.Midnight, Prayer.Tahajjud],
 	SHOW_WIDGET: false,
@@ -179,7 +179,7 @@ persist(
 	// monthly view
 	HIJRI_MONTHLY_VIEW: false,
 	// --- HILAL CRITERIA DEFAULT ---
-	USE_CUSTOM_HILAL_CRITERIA: true, // Default-nya ON (pakai kalender MABIMS)
+	USE_CUSTOM_HILAL_CRITERIA: false, // Default-nya OFF (pakai kalender standar HP)
 	HILAL_MIN_ALTITUDE: 3.0,          // Default MABIMS Baru
 	HILAL_MIN_ELONGATION: 6.4,        // Default MABIMS Baru
 	// ------------------------------

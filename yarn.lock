@@ -4701,9 +4701,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"al-azan@workspace:.":
+"al-azanQ@workspace:.":
   version: 0.0.0-use.local
-  resolution: "al-azan@workspace:."
+  resolution: "al-azanQ@workspace:."
   dependencies:
     "@babel/core": "npm:^7.20.0"
     "@babel/plugin-transform-react-jsx": "npm:^7.17.3"
@@ -4733,6 +4733,7 @@ __metadata:
     "@typescript-eslint/parser": "npm:^5.47.1"
     "@xutl/defer": "npm:^1.0.5"
     adhan-extended: "npm:^6.1.0"
+    astronomy-engine: "npm:^2.1.19"
     babel-jest: "npm:^29.6.3"
     babel-plugin-macros: "npm:^3.1.0"
     babel-plugin-module-resolver: "npm:^4.1.0"
@@ -5099,6 +5100,13 @@ __metadata:
   version: 1.0.0
   resolution: "astral-regex@npm:1.0.0"
   checksum: 10/93417fc0879531cd95ace2560a54df865c9461a3ac0714c60cbbaa5f1f85d2bee85489e78d82f70b911b71ac25c5f05fc5a36017f44c9bb33c701bee229ff848
+  languageName: node
+  linkType: hard
+
+"astronomy-engine@npm:^2.1.19":
+  version: 2.1.19
+  resolution: "astronomy-engine@npm:2.1.19"
+  checksum: 10/b58653129fe249c4b2fa06160add8787fc8b6b779521dcfefbbbf34a5149807b3b9592051e88a2d9b37329c9300f9b0c5233fe58ccf604a990fc6021bb683205
   languageName: node
   linkType: hard
 
@@ -12050,9 +12058,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-draggable-flatlist@patch:react-native-draggable-flatlist@npm%3A4.0.1#./.yarn/patches/react-native-draggable-flatlist-npm-4.0.1-4a95e98e27.patch::locator=al-azan%40workspace%3A.":
+"react-native-draggable-flatlist@patch:react-native-draggable-flatlist@npm%3A4.0.1#./.yarn/patches/react-native-draggable-flatlist-npm-4.0.1-4a95e98e27.patch::locator=al-azanQ%40workspace%3A.":
   version: 4.0.1
-  resolution: "react-native-draggable-flatlist@patch:react-native-draggable-flatlist@npm%3A4.0.1#./.yarn/patches/react-native-draggable-flatlist-npm-4.0.1-4a95e98e27.patch::version=4.0.1&hash=9b3dcd&locator=al-azan%40workspace%3A."
+  resolution: "react-native-draggable-flatlist@patch:react-native-draggable-flatlist@npm%3A4.0.1#./.yarn/patches/react-native-draggable-flatlist-npm-4.0.1-4a95e98e27.patch::version=4.0.1&hash=9b3dcd&locator=al-azanQ%40workspace%3A."
   dependencies:
     "@babel/preset-typescript": "npm:^7.17.12"
   peerDependencies:

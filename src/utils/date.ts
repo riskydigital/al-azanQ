@@ -3,6 +3,9 @@ import {defineMessage, t} from '@lingui/macro';
 import {Platform} from 'react-native';
 import {CalcSettingsStore, calcSettings} from '@/store/calculation';
 import {SettingsStore, settings} from '@/store/settings';
+import React, { useState, useEffect } from 'react';
+// Sesuaikan path ini dengan letak file hilalCalculator.ts Anda
+import { getHilalData } from './hilalCalculator';
 
 const timeTranslations = {
   day: defineMessage({

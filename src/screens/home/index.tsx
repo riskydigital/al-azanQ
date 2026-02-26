@@ -1,11 +1,14 @@
 import {t} from '@lingui/macro';
-import {Button, HStack, ScrollView, Stack, Text} from 'native-base';
-import {useCallback, useEffect, useMemo} from 'react';
+import {Button, HStack, ScrollView, Stack, Text, Box} from 'native-base'; // Tambahkan Box
+import {useCallback, useEffect, useMemo, useState} from 'react'; // Tambahkan useState
+
+// Tambahkan import hilalCalculator di bawah import lainnya:
+import {getHilalData, HilalInfo} from '@/utils/hilalCalculator';
 import {
-  Gesture,
-  GestureDetector,
-  Directions,
-  GestureHandlerRootView,
+	Gesture,
+	GestureDetector,
+	Directions,
+	GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import {runOnJS} from 'react-native-reanimated';
 import {useStore} from 'zustand';
@@ -38,245 +41,342 @@ import {askPermissions} from '@/utils/permission';
 import {shouldShowRamadanNotice, showRamadanAlert} from '@/utils/ramadan';
 
 type DayDetails = {
-  dateString: string;
-  dayName: string;
-  arabicDate: string;
+	dateString: string;
+	dayName: string;
+	arabicDate: string;
 };
 
 // Tambahkan parameter maghribTime
 function getDayDetails(date: Date, maghribTime?: Date): DayDetails {
-  const now = new Date(); // Ambil waktu aktual saat ini
-
-  // Cek apakah waktu saat ini (jam dan menit) sudah melewati jam Maghrib hari ini
-  let isPastMaghrib = false;
-  if (maghribTime) {
-    // Kita gunakan waktu aktual (now) untuk membandingkan, bukan date kalender
-    isPastMaghrib = now.getTime() >= maghribTime.getTime();
-  }
-
-  return {
-    dayName: getDayName(date),
-    dateString: getFormattedDate(date),
-    // Kirim status isPastMaghrib ke fungsi getArabicDate yang sudah kita edit di date.ts
-    arabicDate: getArabicDate(date, isPastMaghrib), 
-  };
+	const now = new Date(); // Ambil waktu aktual saat ini
+	
+	// Cek apakah waktu saat ini (jam dan menit) sudah melewati jam Maghrib hari ini
+	let isPastMaghrib = false;
+	if (maghribTime) {
+		// Kita gunakan waktu aktual (now) untuk membandingkan, bukan date kalender
+		isPastMaghrib = now.getTime() >= maghribTime.getTime();
+	}
+	
+	return {
+		dayName: getDayName(date),
+		dateString: getFormattedDate(date),
+		// Kirim status isPastMaghrib ke fungsi getArabicDate yang sudah kita edit di date.ts
+		arabicDate: getArabicDate(date, isPastMaghrib), 
+	};
 }
 
 export function Home() {
-  const {
-    currentDate,
-    increaseCurrentDateByOne,
-    decreaseCurrentDateByOne,
-    resetCurrentDate,
-    isNotToday,
-  } = useStore(
+	const {
+		currentDate,
+		increaseCurrentDateByOne,
+		decreaseCurrentDateByOne,
+		resetCurrentDate,
+		isNotToday,
+	} = useStore(
     homeStore,
     state => ({
-      currentDate: state.date,
-      isNotToday: state.isNotToday,
-      increaseCurrentDateByOne: state.increaseCurrentDateByOne,
-      decreaseCurrentDateByOne: state.decreaseCurrentDateByOne,
-      resetCurrentDate: state.resetCurrentDate,
-    }),
+		currentDate: state.date,
+		isNotToday: state.isNotToday,
+		increaseCurrentDateByOne: state.increaseCurrentDateByOne,
+		decreaseCurrentDateByOne: state.decreaseCurrentDateByOne,
+		resetCurrentDate: state.resetCurrentDate,
+	}),
     shallow,
-  );
-
-  const impactfulSettings = useStore(
+	);
+	
+	const impactfulSettings = useStore(
     settings,
     s => ({
-      NUMBERING_SYSTEM: s.NUMBERING_SYSTEM,
-      SELECTED_ARABIC_CALENDAR: s.SELECTED_ARABIC_CALENDAR,
-      SELECTED_SECONDARY_CALENDAR: s.SELECTED_SECONDARY_CALENDAR,
-      CALC_SETTINGS_HASH: s.CALC_SETTINGS_HASH,
-      HIDDEN_PRAYERS: s.HIDDEN_PRAYERS,
-      DELIVERED_ALARM_TIMESTAMPS: s.DELIVERED_ALARM_TIMESTAMPS,
-      HIGHLIGHT_CURRENT_PRAYER: s.HIGHLIGHT_CURRENT_PRAYER,
-    }),
+		NUMBERING_SYSTEM: s.NUMBERING_SYSTEM,
+		SELECTED_ARABIC_CALENDAR: s.SELECTED_ARABIC_CALENDAR,
+		SELECTED_SECONDARY_CALENDAR: s.SELECTED_SECONDARY_CALENDAR,
+		CALC_SETTINGS_HASH: s.CALC_SETTINGS_HASH,
+		HIDDEN_PRAYERS: s.HIDDEN_PRAYERS,
+		DELIVERED_ALARM_TIMESTAMPS: s.DELIVERED_ALARM_TIMESTAMPS,
+		HIGHLIGHT_CURRENT_PRAYER: s.HIGHLIGHT_CURRENT_PRAYER,
+	}),
     shallow,
-  );
-
-  const location = useStore(calcSettings, s => s.LOCATION);
-
-  const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate]);
-
-// Kita pastikan mengambil objek maghrib dari hasil kalkulasi prayerTimes
-  const day = useMemo(
-    () => getDayDetails(currentDate, prayerTimes?.maghrib), 
-    [currentDate, prayerTimes] // Tambahkan prayerTimes ke dependency array
-  );
-
-  useEffect(() => {
-    askPermissions().finally(async () => {
-      if (getItem(SettingsWasImportedKey)) {
-        await showBatteryOptimizationReminder().then(() => {
-          deleteItem(SettingsWasImportedKey);
-        });
-      }
-      if (shouldShowRamadanNotice()) {
-        showRamadanAlert();
-      }
-    });
-  }, []);
-
-  useNoInitialEffect(() => {
-    resetCurrentDate();
-  }, [impactfulSettings, resetCurrentDate]);
-
-  const goToLocations = useCallback(() => navigate('FavoriteLocations'), []);
-  const goToMonthlyView = useCallback(() => navigate('MonthlyView'), []);
-
-  const locationText = useMemo(() => getLocationLabel(location), [location]);
-
-  const flingLeft = Gesture.Fling()
+	);
+	
+	const location = useStore(calcSettings, s => s.LOCATION);
+	
+	const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate]);
+	
+	const day = useMemo(
+	() => getDayDetails(currentDate, prayerTimes?.maghrib),
+	[currentDate, prayerTimes]
+	);
+	
+	// --- MASUKKAN KODE INI DI SINI ---
+	const [hilalInfo, setHilalInfo] = useState<HilalInfo | null>(null);
+	const [hilalDebug, setHilalDebug] = useState<string>("Inisialisasi awal...");
+	
+	useEffect(() => {
+		// SEKARANG KITA PAKAI KATA SANDI YANG BENAR: lat dan long !
+		const lat = location?.lat;
+		const lon = location?.long;
+		const maghrib = prayerTimes?.maghrib;
+		
+		if (!lat || !lon) {
+			setHilalDebug("Menunggu GPS / Lokasi...");
+			return;
+		}
+		
+		if (!maghrib) {
+			setHilalDebug("Menunggu jadwal waktu Maghrib...");
+			return;
+		}
+		
+		try {
+			// Pastikan format Date yang masuk ke mesin Astronomi valid
+			const maghribDate = new Date(maghrib);
+			
+			// Cek apakah tanggalnya valid
+			if (isNaN(maghribDate.getTime())) {
+				setHilalDebug("Error: Format Waktu Maghrib tidak valid!");
+				return;
+			}
+			
+			// Masukkan ke mesin penggilingan Hilal!
+			const data = getHilalData(maghribDate, lat, lon);
+			setHilalInfo(data);
+			setHilalDebug(""); // Sukses! Kosongkan pesan error
+			
+			} catch (error: any) {
+			setHilalDebug("Mesin Astronomi Error: " + (error.message || "Unknown error"));
+		}
+	}, [prayerTimes, location]);
+	// ---------------------------------
+	
+	useEffect(() => {
+		askPermissions().finally(async () => {
+			if (getItem(SettingsWasImportedKey)) {
+				await showBatteryOptimizationReminder().then(() => {
+					deleteItem(SettingsWasImportedKey);
+				});
+			}
+			if (shouldShowRamadanNotice()) {
+				showRamadanAlert();
+			}
+		});
+	}, []);
+	
+	useNoInitialEffect(() => {
+		resetCurrentDate();
+	}, [impactfulSettings, resetCurrentDate]);
+	
+	const goToLocations = useCallback(() => navigate('FavoriteLocations'), []);
+	const goToMonthlyView = useCallback(() => navigate('MonthlyView'), []);
+	
+	const locationText = useMemo(() => getLocationLabel(location), [location]);
+	
+	const flingLeft = Gesture.Fling()
     .direction(Directions.LEFT)
     .onEnd(() => {
-      runOnJS(increaseCurrentDateByOne)();
-    });
-  const flingRight = Gesture.Fling()
+		runOnJS(increaseCurrentDateByOne)();
+	});
+	const flingRight = Gesture.Fling()
     .direction(Directions.RIGHT)
     .onEnd(() => {
-      runOnJS(decreaseCurrentDateByOne)();
-    });
-
-  return (
+		runOnJS(decreaseCurrentDateByOne)();
+	});
+	
+	return (
     <SafeArea>
-      <GestureHandlerRootView style={{flex: 1}}>
-        <GestureDetector gesture={flingLeft}>
-          <GestureDetector gesture={flingRight}>
-            <ScrollView>
-              <Stack flex={1} alignItems="stretch" pb="4">
-                <HStack
-                  mb="-3"
-                  px="3"
-                  justifyContent="space-between"
-                  alignItems="center">
-                  <Text py="1" onPress={goToMonthlyView} flex={1}>
-                    {day.dateString}
-                  </Text>
-                  <HStack alignItems="center">
-                    <Button
-                      accessibilityLabel={translateRoute('QadaCounter')}
-                      p="2"
-                      marginLeft="3"
-                      variant="ghost"
-                      onPress={() => {
-                        navigate('QadaCounter');
-                      }}>
-                      <AddCircleIcon size="2xl" />
-                    </Button>
-                    <Button
-                      accessibilityLabel={translateRoute('QiblaFinder')}
-                      p="2"
-                      variant="ghost"
-                      onPress={() => {
-                        navigate('QiblaFinder');
-                      }}>
-                      <ExploreIcon size="2xl" />
-                    </Button>
-                    <Button
-                      accessibilityLabel={translateRoute('Settings')}
-                      p="2"
-                      marginRight="-3"
-                      variant="ghost"
-                      onPress={() => {
-                        navigate('Settings');
-                      }}>
-                      <SettingsSharpIcon size="2xl" />
-                    </Button>
-                  </HStack>
-                </HStack>
-                <Divider
-                  borderColor="coolGray.300"
-                  mb="-2"
-                  _text={{fontWeight: 'bold'}}>
-                  {day.dayName}
-                </Divider>
-                <HStack
-                  mt="2"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  flexWrap="wrap"
-                  w="100%"
-                  flexDirection={isRTL ? 'row-reverse' : 'row'}>
-                  <Button variant="ghost" onPress={decreaseCurrentDateByOne}>
-                    <Stack
-                      flexDirection={isRTL ? 'row' : 'row-reverse'}
-                      alignItems="center">
-                      <Text fontSize="xs" mx="1">{t`Prev Day`}</Text>
-                      <RestoreIcon size="xl" />
-                    </Stack>
-                  </Button>
-                  {isNotToday && (
-                    <Button
-                      onPress={resetCurrentDate}
-                      variant="outline"
-                      py="2"
-                      px="1"
-                      flexShrink={1}
-                      _text={{
-                        adjustsFontSizeToFit: true,
-                        fontSize: 'xs',
-                        minimumFontScale: 0.8,
-                        noOfLines: 1,
-                        _light: {
-                          color: 'primary.700',
-                        },
-                        _dark: {
-                          color: 'primary.300',
-                        },
-                      }}
-                      borderColor="primary.500">
-                      {t`Show Today`}
-                    </Button>
-                  )}
-                  <Button variant="ghost" onPress={increaseCurrentDateByOne}>
-                    <Stack
-                      flexDirection={isRTL ? 'row' : 'row-reverse'}
-                      alignItems="center">
-                      <UpdateIcon size="xl" />
-                      <Text mx="1" fontSize="xs">{t`Next Day`}</Text>
-                    </Stack>
-                  </Button>
-                </HStack>
-                <PrayerTimesBox
-                  pt="2.5"
-                  prayerTimes={prayerTimes}
-                  settings={impactfulSettings}
-                />
-                <Text
-                  key={impactfulSettings.SELECTED_ARABIC_CALENDAR}
-                  fontSize="md"
-                  textAlign="center">
-                  {day.arabicDate}
-                </Text>
-                {location && (
-                  <Button
-                    pt="1"
-                    p="3"
-                    accessibilityActions={[
-                      {
-                        name: 'activate',
-                        label: t`See favorite locations`,
-                      },
-                    ]}
-                    onPress={goToLocations}
-                    onAccessibilityAction={goToLocations}
-                    variant="unstyled">
-                    <Text
-                      borderBottomWidth={1}
-                      borderColor="muted.300"
-                      _dark={{
-                        borderColor: 'muted.500',
-                      }}>
-                      {locationText}
-                    </Text>
-                  </Button>
-                )}
-              </Stack>
-            </ScrollView>
-          </GestureDetector>
-        </GestureDetector>
-      </GestureHandlerRootView>
+	<GestureHandlerRootView style={{flex: 1}}>
+	<GestureDetector gesture={flingLeft}>
+	<GestureDetector gesture={flingRight}>
+	<ScrollView>
+	<Stack flex={1} alignItems="stretch" pb="4">
+	<HStack
+	mb="-3"
+	px="3"
+	justifyContent="space-between"
+	alignItems="center">
+	<Text py="1" onPress={goToMonthlyView} flex={1}>
+	{day.dateString}
+	</Text>
+	<HStack alignItems="center">
+	<Button
+	accessibilityLabel={translateRoute('QadaCounter')}
+	p="2"
+	marginLeft="3"
+	variant="ghost"
+	onPress={() => {
+		navigate('QadaCounter');
+	}}>
+	<AddCircleIcon size="2xl" />
+	</Button>
+	<Button
+	accessibilityLabel={translateRoute('QiblaFinder')}
+	p="2"
+	variant="ghost"
+	onPress={() => {
+		navigate('QiblaFinder');
+	}}>
+	<ExploreIcon size="2xl" />
+	</Button>
+	<Button
+	accessibilityLabel={translateRoute('Settings')}
+	p="2"
+	marginRight="-3"
+	variant="ghost"
+	onPress={() => {
+		navigate('Settings');
+	}}>
+	<SettingsSharpIcon size="2xl" />
+	</Button>
+	</HStack>
+	</HStack>
+	<Divider
+	borderColor="coolGray.300"
+	mb="-2"
+	_text={{fontWeight: 'bold'}}>
+	{day.dayName}
+	</Divider>
+	<HStack
+	mt="2"
+	justifyContent="space-between"
+	alignItems="center"
+	flexWrap="wrap"
+	w="100%"
+	flexDirection={isRTL ? 'row-reverse' : 'row'}>
+	<Button variant="ghost" onPress={decreaseCurrentDateByOne}>
+	<Stack
+	flexDirection={isRTL ? 'row' : 'row-reverse'}
+	alignItems="center">
+	<Text fontSize="xs" mx="1">{t`Prev Day`}</Text>
+	<RestoreIcon size="xl" />
+	</Stack>
+	</Button>
+	{isNotToday && (
+		<Button
+		onPress={resetCurrentDate}
+		variant="outline"
+		py="2"
+		px="1"
+		flexShrink={1}
+		_text={{
+			adjustsFontSizeToFit: true,
+			fontSize: 'xs',
+			minimumFontScale: 0.8,
+			noOfLines: 1,
+			_light: {
+				color: 'primary.700',
+			},
+			_dark: {
+				color: 'primary.300',
+			},
+		}}
+		borderColor="primary.500">
+		{t`Show Today`}
+		</Button>
+	)}
+	<Button variant="ghost" onPress={increaseCurrentDateByOne}>
+	<Stack
+	flexDirection={isRTL ? 'row' : 'row-reverse'}
+	alignItems="center">
+	<UpdateIcon size="xl" />
+	<Text mx="1" fontSize="xs">{t`Next Day`}</Text>
+	</Stack>
+	</Button>
+	</HStack>
+	<PrayerTimesBox
+	pt="2.5"
+	prayerTimes={prayerTimes}
+	settings={impactfulSettings}
+	/>
+	
+	<Text
+	key={impactfulSettings.SELECTED_ARABIC_CALENDAR}
+	fontSize="md"
+	textAlign="center">
+	{day.arabicDate}
+	</Text>
+	
+	{/* --- DASHBOARD HILAL MABIMS --- */}
+	<Box
+	bg="#FFF8E7" 
+	p="4"
+	mx="4"
+	mt="4"
+	borderRadius="md"
+	borderWidth={1}
+	borderColor="#D4AF37"
+	_dark={{ bg: 'gray.800', borderColor: '#D4AF37' }} 
+	>
+	<Text fontSize="md" fontWeight="bold" color="#D4AF37" mb="2" textAlign="center">
+	Info Hilal MABIMS 🌙
+	</Text>
+	<Text fontSize="md" color="#D4AF37" mb="2" textAlign="center">
+	(Saat Maghrib)
+	</Text>	
+	{/* Tampilkan pesan Debug jika belum ada hasil */}
+	{!hilalInfo ? (
+		<Text textAlign="center" fontWeight="bold" color="red.500" mt="2">
+		⏳ {hilalDebug}
+		</Text>
+		) : (
+		<Box>
+		<HStack justifyContent="space-between" mb="1">
+		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Umur Bulan:</Text>
+		<Text fontWeight="bold">{hilalInfo.moonAgeHours.toFixed(1)} Jam</Text>
+		</HStack>
+		
+		<HStack justifyContent="space-between" mb="1">
+		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi Hilal:</Text>
+		<Text fontWeight="bold">{hilalInfo.moonAltitude.toFixed(2)}°</Text>
+		</HStack>
+		
+		<HStack justifyContent="space-between" mb="3">
+		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Elongasi:</Text>
+		<Text fontWeight="bold">{hilalInfo.elongation.toFixed(2)}°</Text>
+		</HStack>
+		
+		<Divider bg="gray.30" mb="1" />
+		
+		<Text
+		color={hilalInfo.isMabimsEligible ? 'green.600' : 'red.500'}
+		fontWeight="bold"
+		textAlign="center"
+		>
+		{hilalInfo.isMabimsEligible 
+			? '✅ Memenuhi Syarat (Bulan Baru)' 
+		: '❌ Belum Terlihat (Istikmal)'}
+		</Text>
+		</Box>
+	)}
+	</Box>
+	{/* --- SELESAI DASHBOARD HILAL --- */}
+	
+	{location && (
+		<Button
+		pt="1"
+		p="3"
+		accessibilityActions={[
+			{
+				name: 'activate',
+				label: t`See favorite locations`,
+			},
+		]}
+		onPress={goToLocations}
+		onAccessibilityAction={goToLocations}
+		variant="unstyled">
+		<Text
+		borderBottomWidth={1}
+		borderColor="muted.300"
+		_dark={{
+			borderColor: 'muted.500',
+		}}>
+		{locationText}
+		</Text>
+		</Button>
+	)}
+	</Stack>
+	</ScrollView>
+	</GestureDetector>
+	</GestureDetector>
+	</GestureHandlerRootView>
     </SafeArea>
-  );
+	);
 }

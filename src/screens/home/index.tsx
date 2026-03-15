@@ -476,7 +476,7 @@ export function Home() {
 		</HStack>
 		
 		<HStack justifyContent="space-between" mb="1">
-		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi Hilal:</Text>
+		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi Bulan:</Text>
 		<Text fontWeight="bold">{hilalInfo.moonAltitude.toFixed(2)}°</Text>
 		</HStack>
 		

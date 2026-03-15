@@ -1,7 +1,9 @@
 import {t} from '@lingui/macro';
 import {Button, HStack, ScrollView, Stack, Text, Box} from 'native-base'; // Tambahkan Box
 import {useCallback, useEffect, useMemo, useState} from 'react'; // Tambahkan useState
+import {AppState} from 'react-native';
 import {getHilalData, HilalInfo} from '@/utils/hilalCalculator';
+import {updateWidgets} from '@/tasks/update_widgets';
 import {
 	Gesture,
 	GestureDetector,
@@ -44,15 +46,13 @@ type DayDetails = {
 	arabicDate: string;
 };
 
-// Tambahkan parameter ke-4: isPastMaghrib
+// Tambahkan isPastMaghrib sebagai parameter ke-4
 function getDayDetails(date: Date, maghribTime?: Date, autoAdjustment: number = 0, isPastMaghrib: boolean = false): DayDetails {
-    // Hapus baris "const now = new Date(); ..." dari sini
-    
     const hijriTargetDate = new Date(date);
     if (autoAdjustment !== 0) {
         hijriTargetDate.setDate(hijriTargetDate.getDate() + autoAdjustment);
 	}
-	
+    
     return {
         dayName: getDayName(date),
         dateString: getFormattedDate(date),
@@ -113,35 +113,63 @@ export function Home() {
 	useEffect(() => {
 		if (!prayerTimes?.maghrib) return;
 		
-		const maghribTime = prayerTimes.maghrib.getTime();
-		const now = Date.now();
+		// Fungsi untuk "Melihat Jam Dinding"
+		const checkTime = () => {
+			const maghribTime = prayerTimes.maghrib.getTime();
+			const now = Date.now();
+			setIsPastMaghrib(now >= maghribTime);
+		};
 		
-		// Jika saat aplikasi dibuka sudah lewat Maghrib
-		if (now >= maghribTime) {
-			setIsPastMaghrib(true);
-			} else {
-			// Jika belum Maghrib, pasang alarm (timeout) agar me-refresh persis saat Maghrib tiba!
-			setIsPastMaghrib(false);
-			const timeout = setTimeout(() => {
+		// 1. Cek langsung saat aplikasi pertama dibuka
+		checkTime();
+		
+		// 2. Pasang alarm untuk pergantian waktu berjalan normal (saat HP dibiarkan menyala)
+		const maghribTime = prayerTimes.maghrib.getTime();
+		let timer: NodeJS.Timeout;
+		if (Date.now() < maghribTime) {
+			timer = setTimeout(() => {
 				setIsPastMaghrib(true);
-			}, maghribTime - now);
-			
-			return () => clearTimeout(timeout); // Bersihkan alarm jika ganti hari
+			}, maghribTime - Date.now());
 		}
+		
+		// 3. SENSOR KESADARAN: Bangun & cek ulang saat user kembali dari Settings!
+		const subscription = AppState.addEventListener('change', nextAppState => {
+			if (nextAppState === 'active') {
+				checkTime();
+			}
+		});
+		
+		return () => {
+			if (timer) clearTimeout(timer);
+			subscription.remove();
+		};
 	}, [prayerTimes]);
-	// --------------------------------------------------- ---------------------------------------------------
 	
 	const day = useMemo(
-	// Masukkan isPastMaghrib sebagai parameter ke-4
+	// Masukkan isPastMaghrib ke dalam memo
 	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib),
-	[currentDate, prayerTimes, autoAdjustment, isPastMaghrib] // Wajib tambahkan isPastMaghrib di dalam kurung siku ini!
+	[currentDate, prayerTimes, autoAdjustment, isPastMaghrib] 
 	);
+	// 🔥 PELATUK SINKRONISASI WIDGET PAKSA 🔥
+	// Setiap kali tanggal Arab berubah atau waktu melewati Maghrib, paksa Widget untuk update!
+	useEffect(() => {
+		updateWidgets().catch((err) => console.log("Gagal update widget:", err));
+	}, [day.arabicDate, isPastMaghrib]);
+	// ----------------------------------------
 	
-	// 1. ---  DASBOR HILAL  ---
+	// 1. ---  DASBOR HILAL (AWARENESS HARI ESOK)  ---
 	useEffect(() => {
 		const lat = location?.lat;
 		const lon = location?.long;
-		const maghrib = prayerTimes?.maghrib;
+		
+		// 🔥 LOMPATAN WAKTU: Jika sudah lewat Maghrib, kita teropong hilal untuk BESOK sore!
+		let targetObservationDate = new Date(currentDate);
+		if (isPastMaghrib) {
+			targetObservationDate.setDate(targetObservationDate.getDate() + 1);
+		}
+		
+		const targetPrayerTimes = getPrayerTimes(targetObservationDate);
+		const maghrib = targetPrayerTimes?.maghrib;
 		
 		if (!lat || !lon || !maghrib) return;
 		
@@ -160,77 +188,116 @@ export function Home() {
 			data.isMabimsEligible = (currentAlt >= targetAlt) && (currentElong >= targetElong);
             
 			setHilalInfo(data);
-			setHilalDebug(`Alt:${currentAlt.toFixed(2)}° >= Tgt:${targetAlt}° ? ${data.isMabimsEligible}`); 
+			setHilalDebug(`Target Tgl: ${targetObservationDate.getDate()} | Alt:${currentAlt.toFixed(2)}° >= Tgt:${targetAlt}° ? ${data.isMabimsEligible}`); 
 			
 			} catch (error: any) {
 			setHilalDebug("Error Dasbor: " + (error.message || "Unknown error"));
 		}
-	}, [prayerTimes, location, minAltitude, minElongation]); 
+		// Wajib pantau isPastMaghrib di sini!
+	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation]);
 	
-	// 2. --- HILAL ---
+// 2. --- HILAL ---
 	useEffect(() => {
 		if (!useCustomHilal) {
 			setAutoAdjustment(0);
-			setTmDebug("TM: OFF (Penanggalan Sederhana)");
+			setTmDebug("TM: OFF (Standar Global)");
 			return;
 		}
-		
+
 		const lat = location?.lat;
 		const lon = location?.long;
-		let  infoHilal = "test";
 		if (!lat || !lon) return;
-		
+
 		try {
-			const formatter = new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura', { day: 'numeric' });
-			const monthFormatter = new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura', { month: 'numeric' });
+			// Pastikan pakai tipe kalender yang dipilih user
+			const calendarType = impactfulSettings.SELECTED_ARABIC_CALENDAR || 'islamic';
+			const formatter = new Intl.DateTimeFormat(`en-US-u-ca-${calendarType}`, { day: 'numeric' });
 			
-			let observationDate = new Date(currentDate);
-			let guard = 0; let found29th = false;
-			const currentUqMonth = monthFormatter.format(observationDate);
-			
-			while (guard < 40) {
-				const uqDay = parseInt(formatter.format(observationDate), 10);
-				const uqMonth = monthFormatter.format(observationDate);
-				if (uqDay === 29 && uqMonth !== currentUqMonth) { found29th = true; break; }
-				observationDate.setDate(observationDate.getDate() - 1);
+			// 1. Tancapkan Jangkar: Mundur 4 bulan ke belakang untuk mencari tanggal 1 Hijriah
+			let anchorDate = new Date(currentDate);
+			anchorDate.setHours(12, 0, 0, 0); 
+			anchorDate.setMonth(anchorDate.getMonth() - 4); 
+			anchorDate.setDate(1); 
+
+			let guard = 0;
+			while (guard < 60) {
+				if (parseInt(formatter.format(anchorDate), 10) === 1) break;
+				anchorDate.setDate(anchorDate.getDate() + 1);
 				guard++;
 			}
-			
-			if (found29th) {
-				const pastPrayerTimes = getPrayerTimes(observationDate);
-				let pastMaghrib = pastPrayerTimes?.maghrib || new Date(observationDate);
-				if (!pastPrayerTimes?.maghrib) pastMaghrib.setHours(18, 0, 0, 0);
-				
-				const pastHilal = getHilalData(pastMaghrib, lat, lon);
-				
-				const pastAlt = Number(pastHilal?.altitude ?? pastHilal?.alt ?? pastHilal?.moonAltitude ?? 0);
-				const pastElong = Number(pastHilal?.elongation ?? pastHilal?.elong ?? pastHilal?.moonElongation ?? 0);
-				
-				const targetAlt = Number(minAltitude) || 0;
-				const targetElong = Number(minElongation) || 0;
-				
-				const isEligible = (pastAlt >= targetAlt) && (pastElong >= targetElong);
-				const mabimsMonthLength = isEligible ? 29 : 30;
-				
-				const dayAfter29 = new Date(observationDate);
-				dayAfter29.setDate(dayAfter29.getDate() + 1);
-				const uqDayAfter29 = parseInt(formatter.format(dayAfter29), 10);
-				const uqMonthLength = uqDayAfter29 === 1 ? 29 : 30;
-				
-				const calculatedAdjustment = uqMonthLength - mabimsMonthLength;
-				if (isEligible) {
-					infoHilal = "Memenuhi Syarat Visibilitas";
-					} else {
-					infoHilal = "Belum Terlihat (Istikmal)";
+
+			// 2. Jalan Maju (Forward Simulation) mencari Awal Bulan MABIMS saat ini
+			let mabimsStart = new Date(anchorDate);
+			let currentTarget = new Date(currentDate);
+			currentTarget.setHours(12, 0, 0, 0);
+
+			let safety = 0;
+			let lastAlt = 0; let lastElong = 0;
+
+			while (safety < 6) { 
+				let day29 = new Date(mabimsStart);
+				day29.setDate(day29.getDate() + 28); // Lompat ke hari ke-29
+
+				const pt = getPrayerTimes(day29);
+				let maghrib = pt?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
+
+				// Teropong Hilal
+				const hilal = getHilalData(maghrib, lat, lon);
+				const alt = Number(hilal?.altitude ?? hilal?.alt ?? hilal?.moonAltitude ?? 0);
+				const elong = Number(hilal?.elongation ?? hilal?.elong ?? hilal?.moonElongation ?? 0);
+				const tgtAlt = Number(minAltitude) || 0;
+				const tgtElong = Number(minElongation) || 0;
+
+				const isVisible = (alt >= tgtAlt) && (elong >= tgtElong);
+				const monthLength = isVisible ? 29 : 30;
+
+				let nextMonthStart = new Date(mabimsStart);
+				nextMonthStart.setDate(nextMonthStart.getDate() + monthLength);
+
+				// Jika bulan depan sudah melewati hari ini, STOP! Kita temukan bulannya.
+				if (currentTarget.getTime() < nextMonthStart.getTime()) {
+					lastAlt = alt; lastElong = elong;
+					break;
 				}
-				setTmDebug(`----------------------------------\nTeropong Akhir Bulan lalu\nIR: ON \n PastAlt: ${pastAlt.toFixed(2)} vs CAlt: ${targetAlt} \n PastAlt : ${pastElong.toFixed(2)} vs  CElng : ${targetElong} \n Adj = ${calculatedAdjustment}\nHasil : ${infoHilal}`);
-				setAutoAdjustment(calculatedAdjustment);
+				mabimsStart = nextMonthStart;
+				safety++;
 			}
-			} catch (error: any) {
+
+			// 3. Hitung hari ini MABIMS tanggal berapa
+			const diffTime = currentTarget.getTime() - mabimsStart.getTime();
+			const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+			const mabimsDay = diffDays + 1;
+
+			// 4. Cari penyesuaian (Adjustment) untuk sinkronisasi sistem
+			let bestAdj = 0;
+			let found = false;
+			for (let adj = -5; adj <= 5; adj++) {
+				let testD = new Date(currentTarget);
+				testD.setDate(testD.getDate() + adj);
+				if (parseInt(formatter.format(testD), 10) === mabimsDay) {
+					bestAdj = adj; found = true; break;
+				}
+			}
+			
+			// Fallback: Jika kalender HP tidak punya tgl 30 (lompat 29 ke 1), cegah loncat bulan
+			if (!found && mabimsDay === 30) {
+				for (let adj = -5; adj <= 5; adj++) {
+					let testD = new Date(currentTarget);
+					testD.setDate(testD.getDate() + adj);
+					if (parseInt(formatter.format(testD), 10) === 29) {
+						bestAdj = adj; break;
+					}
+				}
+			}
+
+			setTmDebug(`IR: ON | MABIMS Tgl ${mabimsDay} | Adj=${bestAdj}\nAlt 29th: ${lastAlt.toFixed(2)} vs Tgt: ${minAltitude}`);
+			setAutoAdjustment(bestAdj);
+
+		} catch (error: any) {
 			setTmDebug("TM Error: " + error.message);
 			setAutoAdjustment(0);
 		}
-	}, [currentDate, location, useCustomHilal, minAltitude, minElongation]);
+	}, [currentDate, location, useCustomHilal, minAltitude, minElongation, impactfulSettings.SELECTED_ARABIC_CALENDAR]);
 	// ---------------------------------
 	
 	useEffect(() => {
@@ -441,7 +508,7 @@ export function Home() {
 	
 	{/* --- DEBUG PRINT--- */}
 	<Text textAlign="center" fontSize="xs" color="gray.400" mt="1">
-	{tmDebug}
+	{/*tmDebug*/}
 	</Text>
 	{/* ---------------------------------- */}
 	</Box>

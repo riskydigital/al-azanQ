@@ -1464,7 +1464,7 @@ msgstr "Untuk berhenti memainkan adzan ketika Anda menerima panggilan, kami perl
 
 #: src/utils/upcoming.ts:15
 msgid "Tomorrow"
-msgstr "Besok"
+msgstr "-"
 
 #: src/components/week_day_selector.tsx:17
 msgid "Tuesday"

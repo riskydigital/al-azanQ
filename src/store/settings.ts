@@ -88,6 +88,9 @@ export type SettingsStore = {
 	
 	// monthly view
 	HIJRI_MONTHLY_VIEW: boolean;
+	// --- LIVE GPS SETTINGS ---
+	USE_LIVE_GPS: boolean;
+	// -------------------------
 	// --- HILAL CRITERIA SETTINGS ---
 	USE_CUSTOM_HILAL_CRITERIA: boolean;
 	HILAL_MIN_ALTITUDE: number;
@@ -178,6 +181,9 @@ persist(
 	USE_DIFFERENT_ALARM_TYPE: false,
 	// monthly view
 	HIJRI_MONTHLY_VIEW: false,
+	// --- LIVE GPS DEFAULT ---
+	USE_LIVE_GPS: false,
+	// ------------------------
 	// --- HILAL CRITERIA DEFAULT ---
 	USE_CUSTOM_HILAL_CRITERIA: true, // Default-nya ON (pakai kalender MABIMS)
 	HILAL_MIN_ALTITUDE: 3.0,          // Default MABIMS Baru

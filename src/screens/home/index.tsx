@@ -1,7 +1,10 @@
+
+import {clearCache} from '@/store/adhan_calc_cache';
+import LocationProvider from 'react-native-get-location';
 import {t} from '@lingui/macro';
 import {Button, HStack, ScrollView, Stack, Text, Box} from 'native-base'; // Tambahkan Box
 import {useCallback, useEffect, useMemo, useState} from 'react'; // Tambahkan useState
-import {AppState} from 'react-native';
+import {AppState, Linking} from 'react-native'; // 🔥 Tambahkan Linking
 import {getHilalData, HilalInfo} from '@/utils/hilalCalculator';
 import {updateWidgets} from '@/tasks/update_widgets';
 import {
@@ -94,12 +97,15 @@ export function Home() {
 	);
 	
 	const location = useStore(calcSettings, s => s.LOCATION);
-	const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate]);
+	
+	const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate, location]);
 	
 	const [hilalInfo, setHilalInfo] = useState<HilalInfo | null>(null);
 	const [hilalDebug, setHilalDebug] = useState<string>("Inisialisasi awal...");
 	const [autoAdjustment, setAutoAdjustment] = useState<number>(0);
 	const [tmDebug, setTmDebug] = useState<string>("TM: Loading...");
+	// 🔥 STATE KHUSUS UNTUK TEKS SATELIT (TIER 1)
+	const [liveCoords, setLiveCoords] = useState<{lat: number, long: number} | null>(null);
 	
 	// 🔥 AMBIL SAKLAR DAN ANGKA DARI GUDANG SETTINGS
 	const useCustomHilal = useStore(settings, s => s.USE_CUSTOM_HILAL_CRITERIA);
@@ -107,54 +113,118 @@ export function Home() {
 	const minElongation = useStore(settings, s => s.HILAL_MIN_ELONGATION);
 	// ---------------------------------------------------
 	
-	// 🔥 ALARM PENDETEKSI MAGHRIB REAL-TIME
+	// 🔥 ALARM PENDETEKSI MAGHRIB REAL-TIME & LIVE GPS 🔥
 	const [isPastMaghrib, setIsPastMaghrib] = useState(false);
 	
+	
+	// 🔥 PENGATUR LABEL INSTAN (Saat Saklar Mudik Dinyalakan/Dimatikan) 🔥
+	const useLiveGps = useStore(settings, s => s.USE_LIVE_GPS);
+	
+	useEffect(() => {
+		const currentLoc = calcSettings.getState().LOCATION;
+		
+		if (useLiveGps) {
+			// 1. Jika mode mudik DINYALAKAN, langsung timpa labelnya detik itu juga!
+			if (currentLoc && currentLoc.label !== '📍 Live GPS (Mudik)') {
+				calcSettings.getState().setSetting('LOCATION', {
+					...currentLoc,
+					label: '📍 Live GPS (Mudik)',
+				});
+			}
+			} else {
+			// 2. Jika mode mudik DIMATIKAN, sembunyikan satelit & hapus label palsunya
+			setLiveCoords(null); 
+			if (currentLoc && currentLoc.label === '📍 Live GPS (Mudik)') {
+				const { label, ...restLoc } = currentLoc; 
+				calcSettings.getState().setSetting('LOCATION', restLoc);
+			}
+		}
+	}, [useLiveGps]); // Efek ini HANYA meledak saat saklar disentuh
+	
+	// 🔥 RADAR TIER 1 (UI) & TIER 2 (KALKULASI 5KM) 🔥
 	useEffect(() => {
 		if (!prayerTimes?.maghrib) return;
 		
-		// Fungsi untuk "Melihat Jam Dinding"
 		const checkTime = () => {
 			const maghribTime = prayerTimes.maghrib.getTime();
-			const now = Date.now();
-			setIsPastMaghrib(now >= maghribTime);
+			setIsPastMaghrib(Date.now() >= maghribTime);
 		};
 		
-		// 1. Cek langsung saat aplikasi pertama dibuka
-		checkTime();
+		const checkLocation = () => {
+			if (useLiveGps) {
+				
+				
+				LocationProvider.getCurrentPosition({
+					enableHighAccuracy: true,
+					timeout: 15000,
+				})
+				.then(loc => {
+					// TIER 1: Update UI Teks Satelit secara instan (Sangat ringan)
+					setLiveCoords({ lat: loc.latitude, long: loc.longitude });
+					
+					// TIER 2: Cek Jarak untuk Kalkulasi Jadwal (Berat)
+					const prevLoc = calcSettings.getState().LOCATION;
+					const latDiff = Math.abs((prevLoc?.lat || 0) - loc.latitude);
+					const lonDiff = Math.abs((prevLoc?.long || 0) - loc.longitude);
+					
+					
+					// Toleransi 0.05 derajat (sekitar 5.5 KM)
+					if (latDiff > 0.05 || lonDiff > 0.05) {
+						clearCache(); // Ledakkan cache lama
+						calcSettings.getState().setSetting('LOCATION', {
+							lat: loc.latitude,
+							long: loc.longitude,
+							label: '📍 Live GPS (Mudik)',
+						});
+					}
+				})
+				.catch((err) => console.log("Live GPS No Signal", err));
+			}
+		};
 		
-		// 2. Pasang alarm untuk pergantian waktu berjalan normal (saat HP dibiarkan menyala)
+		checkTime();
+		checkLocation();
+		
 		const maghribTime = prayerTimes.maghrib.getTime();
 		let timer: NodeJS.Timeout;
 		if (Date.now() < maghribTime) {
-			timer = setTimeout(() => {
-				setIsPastMaghrib(true);
-			}, maghribTime - Date.now());
+			timer = setTimeout(() => setIsPastMaghrib(true), maghribTime - Date.now());
 		}
 		
-		// 3. SENSOR KESADARAN: Bangun & cek ulang saat user kembali dari Settings!
 		const subscription = AppState.addEventListener('change', nextAppState => {
 			if (nextAppState === 'active') {
 				checkTime();
+				checkLocation();
 			}
 		});
 		
+		// Radar mengecek tiap 1 menit (Update Teks Satelit), tapi kalkulasi jadwal aman terkunci di jarak 5KM
+		const interval = setInterval(() => {
+			checkTime();
+			checkLocation();
+		}, 1 * 60 * 1000); 
+		
 		return () => {
 			if (timer) clearTimeout(timer);
+			clearInterval(interval);
 			subscription.remove();
 		};
-	}, [prayerTimes]);
+	}, [prayerTimes, useLiveGps]);
+	
+	
+	
 	
 	const day = useMemo(
 	// Masukkan isPastMaghrib ke dalam memo
 	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib),
 	[currentDate, prayerTimes, autoAdjustment, isPastMaghrib] 
 	);
+	
 	// 🔥 PELATUK SINKRONISASI WIDGET PAKSA 🔥
-	// Setiap kali tanggal Arab berubah atau waktu melewati Maghrib, paksa Widget untuk update!
 	useEffect(() => {
 		updateWidgets().catch((err) => console.log("Gagal update widget:", err));
-	}, [day.arabicDate, isPastMaghrib]);
+		// Tambahkan location di sini agar saat mudik, Widget ikut ter-refresh!
+	}, [day.arabicDate, isPastMaghrib, location]);
 	// ----------------------------------------
 	
 	// 1. ---  DASBOR HILAL (AWARENESS HARI ESOK)  ---
@@ -196,18 +266,18 @@ export function Home() {
 		// Wajib pantau isPastMaghrib di sini!
 	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation]);
 	
-// 2. --- HILAL ---
+	// 2. --- HILAL ---
 	useEffect(() => {
 		if (!useCustomHilal) {
 			setAutoAdjustment(0);
 			setTmDebug("TM: OFF (Standar Global)");
 			return;
 		}
-
+		
 		const lat = location?.lat;
 		const lon = location?.long;
 		if (!lat || !lon) return;
-
+		
 		try {
 			// Pastikan pakai tipe kalender yang dipilih user
 			const calendarType = impactfulSettings.SELECTED_ARABIC_CALENDAR || 'islamic';
@@ -218,42 +288,42 @@ export function Home() {
 			anchorDate.setHours(12, 0, 0, 0); 
 			anchorDate.setMonth(anchorDate.getMonth() - 4); 
 			anchorDate.setDate(1); 
-
+			
 			let guard = 0;
 			while (guard < 60) {
 				if (parseInt(formatter.format(anchorDate), 10) === 1) break;
 				anchorDate.setDate(anchorDate.getDate() + 1);
 				guard++;
 			}
-
+			
 			// 2. Jalan Maju (Forward Simulation) mencari Awal Bulan MABIMS saat ini
 			let mabimsStart = new Date(anchorDate);
 			let currentTarget = new Date(currentDate);
 			currentTarget.setHours(12, 0, 0, 0);
-
+			
 			let safety = 0;
 			let lastAlt = 0; let lastElong = 0;
-
+			
 			while (safety < 6) { 
 				let day29 = new Date(mabimsStart);
 				day29.setDate(day29.getDate() + 28); // Lompat ke hari ke-29
-
+				
 				const pt = getPrayerTimes(day29);
 				let maghrib = pt?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
-
+				
 				// Teropong Hilal
 				const hilal = getHilalData(maghrib, lat, lon);
 				const alt = Number(hilal?.altitude ?? hilal?.alt ?? hilal?.moonAltitude ?? 0);
 				const elong = Number(hilal?.elongation ?? hilal?.elong ?? hilal?.moonElongation ?? 0);
 				const tgtAlt = Number(minAltitude) || 0;
 				const tgtElong = Number(minElongation) || 0;
-
+				
 				const isVisible = (alt >= tgtAlt) && (elong >= tgtElong);
 				const monthLength = isVisible ? 29 : 30;
-
+				
 				let nextMonthStart = new Date(mabimsStart);
 				nextMonthStart.setDate(nextMonthStart.getDate() + monthLength);
-
+				
 				// Jika bulan depan sudah melewati hari ini, STOP! Kita temukan bulannya.
 				if (currentTarget.getTime() < nextMonthStart.getTime()) {
 					lastAlt = alt; lastElong = elong;
@@ -262,12 +332,12 @@ export function Home() {
 				mabimsStart = nextMonthStart;
 				safety++;
 			}
-
+			
 			// 3. Hitung hari ini MABIMS tanggal berapa
 			const diffTime = currentTarget.getTime() - mabimsStart.getTime();
 			const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 			const mabimsDay = diffDays + 1;
-
+			
 			// 4. Cari penyesuaian (Adjustment) untuk sinkronisasi sistem
 			let bestAdj = 0;
 			let found = false;
@@ -289,11 +359,11 @@ export function Home() {
 					}
 				}
 			}
-
+			
 			setTmDebug(`IR: ON | MABIMS Tgl ${mabimsDay} | Adj=${bestAdj}\nAlt 29th: ${lastAlt.toFixed(2)} vs Tgt: ${minAltitude}`);
 			setAutoAdjustment(bestAdj);
-
-		} catch (error: any) {
+			
+			} catch (error: any) {
 			setTmDebug("TM Error: " + error.message);
 			setAutoAdjustment(0);
 		}
@@ -529,6 +599,9 @@ export function Home() {
 		onPress={goToLocations}
 		onAccessibilityAction={goToLocations}
 		variant="unstyled">
+		
+		{/* Gunakan Box dengan alignItems center agar teks turun ke bawah dengan rapi */}
+		<Box alignItems="center" justifyContent="center">
 		<Text
 		borderBottomWidth={1}
 		borderColor="muted.300"
@@ -537,6 +610,37 @@ export function Home() {
 		}}>
 		{locationText}
 		</Text>
+		
+		{/* 🔥 PEMBUKTIAN KOORDINAT LIVE GPS (TIER 1) 🔥 */}
+		{useLiveGps && liveCoords && (
+			<Text fontSize="2xs" color="emerald.600" mt="1" fontWeight="bold" textAlign="center" _dark={{color: 'emerald.400'}}>
+			Satelit: {liveCoords.lat.toFixed(5)}, {liveCoords.long.toFixed(5)}
+			</Text>
+		)}
+		</Box>
+		
+		</Button>
+	)}
+	{/* 🔥 TOMBOL MASJID TERDEKAT 🔥 */}
+	{location?.lat && location?.long && (
+		<Button
+			mt="2"
+			mb="4"
+			mx="12"
+			variant="outline"
+			colorScheme="emerald"
+			borderRadius="full"
+			borderWidth={1.5}
+			onPress={() => {
+				// URL ini sangat ampuh: Jika HP punya Google Maps, dia buka aplikasinya.
+				// Jika tidak, dia akan buka di browser bawaan.
+				const url = `https://www.google.com/maps/search/masjid/@${location.lat},${location.long},15z`;
+				Linking.openURL(url).catch(() => console.log('Gagal membuka map'));
+			}}
+		>
+			<Text fontWeight="bold" color="emerald.600" _dark={{color: 'emerald.400'}}>
+				🕌 Cari Masjid Terdekat
+			</Text>
 		</Button>
 	)}
 	</Stack>

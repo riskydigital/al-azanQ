@@ -634,7 +634,7 @@ export function Home() {
 			onPress={() => {
 				// URL ini sangat ampuh: Jika HP punya Google Maps, dia buka aplikasinya.
 				// Jika tidak, dia akan buka di browser bawaan.
-				const url = `https://www.google.com/maps/search/masjid/@${location.lat},${location.long},15z`;
+				const url = `https://www.google.com/maps/search/masjid+terdekat/@${location.lat},${location.long},14z/data=!3m2!1e3!4b1!4m4!2m3!5m1!10e2!6e1`;
 				Linking.openURL(url).catch(() => console.log('Gagal membuka map'));
 			}}
 		>

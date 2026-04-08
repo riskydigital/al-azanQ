@@ -1,4 +1,4 @@
-
+import { getHijriDay } from '@/utils/date';
 import {clearCache} from '@/store/adhan_calc_cache';
 import LocationProvider from 'react-native-get-location';
 import {t} from '@lingui/macro';
@@ -219,6 +219,28 @@ export function Home() {
 	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib),
 	[currentDate, prayerTimes, autoAdjustment, isPastMaghrib] 
 	);
+	
+	// 🔥 MODIFIKASI: Pastikan autoAdjustment disertakan dalam pengecekan
+	const currentHijriDayStr = useMemo(() => {
+		// Kita buat salinan tanggal yang akan disesuaikan dengan MABIMS
+		const targetDate = new Date(currentDate);
+		
+		// Terapkan autoAdjustment (Hasil kalkulasi MABIMS)
+		if (autoAdjustment !== 0) {
+			targetDate.setDate(targetDate.getDate() + autoAdjustment);
+		}
+		
+		// Panggil getHijriDay dengan tanggal yang sudah disesuaikan
+		// Fungsi ini tetap akan menangani isPastMaghrib & Global Adjustment secara internal
+		return getHijriDay(targetDate, isPastMaghrib);
+	}, [currentDate, autoAdjustment, isPastMaghrib]); // Wajib pantau autoAdjustment di sini
+	
+	const isHilalWatchDay = useMemo(() => {
+		return currentHijriDayStr.includes('29') || 
+		currentHijriDayStr.includes('30') || 
+		currentHijriDayStr.includes('٢٩') || 
+		currentHijriDayStr.includes('٣٠');
+	}, [currentHijriDayStr]);
 	
 	// 🔥 PELATUK SINKRONISASI WIDGET PAKSA 🔥
 	useEffect(() => {
@@ -527,13 +549,14 @@ export function Home() {
 	borderColor="#D4AF37"
 	_dark={{ bg: 'gray.800', borderColor: '#D4AF37' }} 
 	>
+	{/* 🔥 JUDUL DINAMIS 🔥 */}
 	<Text fontSize="md" fontWeight="bold" color="#D4AF37"  textAlign="center">
-	Info Hilal MABIMS 🌙
+	{isHilalWatchDay ? 'Info Hilal MABIMS 🌙' : 'Info Posisi Bulan 🌙'}
 	</Text>
 	<Text color="#D4AF37" mb="2" textAlign="center">
 	(Saat Maghrib)
 	</Text>	
-	{/* Tampilkan pesan Debug */}
+	
 	{!hilalInfo ? (
 		<Text textAlign="center" fontWeight="bold" color="red.500" mt="2">
 		⏳ {hilalDebug}
@@ -541,12 +564,12 @@ export function Home() {
 		) : (
 		<Box>
 		<HStack justifyContent="space-between" mb="1">
-		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Umur Bulan:</Text>
+		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Umur:</Text>
 		<Text fontWeight="bold">{hilalInfo.moonAgeHours.toFixed(1)} Jam</Text>
 		</HStack>
 		
 		<HStack justifyContent="space-between" mb="1">
-		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi Bulan:</Text>
+		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi:</Text>
 		<Text fontWeight="bold">{hilalInfo.moonAltitude.toFixed(2)}°</Text>
 		</HStack>
 		
@@ -557,33 +580,26 @@ export function Home() {
 		
 		<Divider bg="gray.30" mb="1" />
 		
-		<Text
-		color={hilalInfo.isMabimsEligible ? 'green.600' : 'red.500'}
-		fontWeight="bold"
-		textAlign="center"
-		>
-		{hilalInfo.isMabimsEligible 
-			? '✅ Maghrib [nanti] memenuhi Syarat (Visibilitas)' 
-		: '❌ Belum Terlihat (Istikmal)'}
-		</Text>
+		{/* 🔥 STATUS HIDDEN: Hanya tampil di tgl 29 & 30 🔥 */}
+		{isHilalWatchDay && (
+			<Text
+			color={hilalInfo.isMabimsEligible ? 'green.600' : 'red.500'}
+			fontWeight="bold"
+			textAlign="center"
+			>
+			{hilalInfo.isMabimsEligible 
+				? '✅ Maghrib [nanti] memenuhi Syarat (Visibilitas)' 
+			: '❌ Belum Terlihat (Istikmal)'}
+			</Text>
+		)}
 		</Box>
 	)}
-	
-	<Text
-	key={impactfulSettings.SELECTED_ARABIC_CALENDAR}
-	fontSize="md"
-	textAlign="center">
-	{day.arabicDate}
-	</Text>
 	
 	{/* --- DEBUG PRINT--- */}
 	<Text textAlign="center" fontSize="xs" color="gray.400" mt="1">
 	{/*tmDebug*/}
 	</Text>
-	{/* ---------------------------------- */}
 	</Box>
-	
-	{/* ---------------------------------- */}
 	{/* --- SELESAI DASHBOARD HILAL --- */}
 	
 	{location && (
@@ -624,23 +640,23 @@ export function Home() {
 	{/* 🔥 TOMBOL MASJID TERDEKAT 🔥 */}
 	{location?.lat && location?.long && (
 		<Button
-			mt="2"
-			mb="4"
-			mx="12"
-			variant="outline"
-			colorScheme="emerald"
-			borderRadius="full"
-			borderWidth={1.5}
-			onPress={() => {
-				// URL ini sangat ampuh: Jika HP punya Google Maps, dia buka aplikasinya.
-				// Jika tidak, dia akan buka di browser bawaan.
-				const url = `https://www.google.com/maps/search/masjid+terdekat/@${location.lat},${location.long},14z/data=!3m2!1e3!4b1!4m4!2m3!5m1!10e2!6e1`;
-				Linking.openURL(url).catch(() => console.log('Gagal membuka map'));
-			}}
+		mt="2"
+		mb="4"
+		mx="12"
+		variant="outline"
+		colorScheme="emerald"
+		borderRadius="full"
+		borderWidth={1.5}
+		onPress={() => {
+			// URL ini sangat ampuh: Jika HP punya Google Maps, dia buka aplikasinya.
+			// Jika tidak, dia akan buka di browser bawaan.
+			const url = `https://www.google.com/maps/search/masjid+terdekat/@${location.lat},${location.long},14z/data=!3m2!1e3!4b1!4m4!2m3!5m1!10e2!6e1`;
+			Linking.openURL(url).catch(() => console.log('Gagal membuka map'));
+		}}
 		>
-			<Text fontWeight="bold" color="emerald.600" _dark={{color: 'emerald.400'}}>
-				🕌 Cari Masjid Terdekat
-			</Text>
+		<Text fontWeight="bold" color="emerald.600" _dark={{color: 'emerald.400'}}>
+		🕌 Cari Masjid Terdekat
+		</Text>
 		</Button>
 	)}
 	</Stack>

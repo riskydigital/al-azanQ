@@ -1,3 +1,4 @@
+//import { Coordinates, CalculationMethod, PrayerTimes } from 'adhan';
 import { getHijriDay } from '@/utils/date';
 import {clearCache} from '@/store/adhan_calc_cache';
 import LocationProvider from 'react-native-get-location';
@@ -96,13 +97,23 @@ export function Home() {
     shallow,
 	);
 	
+	
+	// 1. Ambil Pengaturan Nasional dari Store
+	const useNationalDateCalc = useStore(settings, s => s.USE_NATIONAL_DATE_CALC);
+	const zeroKmLat = useStore(settings, s => s.NATIONAL_ZERO_KM_LAT);
+	const zeroKmLon = useStore(settings, s => s.NATIONAL_ZERO_KM_LON);
+	
+	// 2. Tambahkan State untuk Info Hilal Nasional
+	const [hilalInfoNational, setHilalInfoNational] = useState<HilalInfo | null>(null);
+	
+	
 	const location = useStore(calcSettings, s => s.LOCATION);
-	
 	const prayerTimes = useMemo(() => getPrayerTimes(currentDate), [currentDate, location]);
-	
 	const [hilalInfo, setHilalInfo] = useState<HilalInfo | null>(null);
 	const [hilalDebug, setHilalDebug] = useState<string>("Inisialisasi awal...");
 	const [autoAdjustment, setAutoAdjustment] = useState<number>(0);
+	// 🔥 1. TAMBAHKAN STATE INI:
+	const [absoluteMabimsDay, setAbsoluteMabimsDay] = useState<number>(0);
 	const [tmDebug, setTmDebug] = useState<string>("TM: Loading...");
 	// 🔥 STATE KHUSUS UNTUK TEKS SATELIT (TIER 1)
 	const [liveCoords, setLiveCoords] = useState<{lat: number, long: number} | null>(null);
@@ -146,14 +157,20 @@ export function Home() {
 		if (!prayerTimes?.maghrib) return;
 		
 		const checkTime = () => {
+			// 🔥 SAKLAR ANTI-BUG BROWSING 🔥
+			// Jika user sedang melihat tanggal selain hari ini (isNotToday = true), 
+			// matikan efek maghrib agar tanggal hijriah tidak bergeser kacau!
+			if (isNotToday) {
+				setIsPastMaghrib(false);
+				return;
+			}
+			
 			const maghribTime = prayerTimes.maghrib.getTime();
 			setIsPastMaghrib(Date.now() >= maghribTime);
 		};
 		
 		const checkLocation = () => {
 			if (useLiveGps) {
-				
-				
 				LocationProvider.getCurrentPosition({
 					enableHighAccuracy: true,
 					timeout: 15000,
@@ -166,7 +183,6 @@ export function Home() {
 					const prevLoc = calcSettings.getState().LOCATION;
 					const latDiff = Math.abs((prevLoc?.lat || 0) - loc.latitude);
 					const lonDiff = Math.abs((prevLoc?.long || 0) - loc.longitude);
-					
 					
 					// Toleransi 0.05 derajat (sekitar 5.5 KM)
 					if (latDiff > 0.05 || lonDiff > 0.05) {
@@ -187,7 +203,9 @@ export function Home() {
 		
 		const maghribTime = prayerTimes.maghrib.getTime();
 		let timer: NodeJS.Timeout;
-		if (Date.now() < maghribTime) {
+		
+		// 🔥 HANYA pasang timer lompatan Maghrib jika user sedang di "Hari Ini"
+		if (!isNotToday && Date.now() < maghribTime) {
 			timer = setTimeout(() => setIsPastMaghrib(true), maghribTime - Date.now());
 		}
 		
@@ -198,7 +216,6 @@ export function Home() {
 			}
 		});
 		
-		// Radar mengecek tiap 1 menit (Update Teks Satelit), tapi kalkulasi jadwal aman terkunci di jarak 5KM
 		const interval = setInterval(() => {
 			checkTime();
 			checkLocation();
@@ -209,32 +226,33 @@ export function Home() {
 			clearInterval(interval);
 			subscription.remove();
 		};
-	}, [prayerTimes, useLiveGps]);
+	}, [prayerTimes, useLiveGps, isNotToday]); // 🔥 Tambahkan isNotToday ke dalam array pelatuk
 	
-	
-	
-	
-	const day = useMemo(
-	// Masukkan isPastMaghrib ke dalam memo
-	() => getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib),
-	[currentDate, prayerTimes, autoAdjustment, isPastMaghrib] 
-	);
-	
-	// 🔥 MODIFIKASI: Pastikan autoAdjustment disertakan dalam pengecekan
-	const currentHijriDayStr = useMemo(() => {
-		// Kita buat salinan tanggal yang akan disesuaikan dengan MABIMS
-		const targetDate = new Date(currentDate);
+	const day = useMemo(() => {
+		const details = getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib);
 		
-		// Terapkan autoAdjustment (Hasil kalkulasi MABIMS)
+		// 🔥 3A. ISTIKMAL PATCH (ANTI DOUBLE 29) 🔥
+		// Jika MABIMS menghitung hari ini adalah hari ke-30 mutlak, 
+		// tapi kalender HP macet di 29, kita paksa ganti teksnya jadi 30!
+		if (useCustomHilal && absoluteMabimsDay === 30 && details.arabicDate.includes('29')) {
+			details.arabicDate = details.arabicDate.replace('29', '30').replace('٢٩', '٣٠');
+		}
+		
+		return details;
+	}, [currentDate, prayerTimes, autoAdjustment, isPastMaghrib, useCustomHilal, absoluteMabimsDay]);
+	
+	const currentHijriDayStr = useMemo(() => {
+		// 🔥 3B. BYPASS DASHBOARD MABIMS 🔥
+		if (useCustomHilal && absoluteMabimsDay === 30) {
+			return "30"; // Paksa dasbor mengerti ini tanggal 30
+		}
+		
+		const targetDate = new Date(currentDate);
 		if (autoAdjustment !== 0) {
 			targetDate.setDate(targetDate.getDate() + autoAdjustment);
 		}
-		
-		// Panggil getHijriDay dengan tanggal yang sudah disesuaikan
-		// Fungsi ini tetap akan menangani isPastMaghrib & Global Adjustment secara internal
 		return getHijriDay(targetDate, isPastMaghrib);
-	}, [currentDate, autoAdjustment, isPastMaghrib]); // Wajib pantau autoAdjustment di sini
-	
+	}, [currentDate, autoAdjustment, isPastMaghrib, useCustomHilal, absoluteMabimsDay]);
 	const isHilalWatchDay = useMemo(() => {
 		return currentHijriDayStr.includes('29') || 
 		currentHijriDayStr.includes('30') || 
@@ -249,56 +267,68 @@ export function Home() {
 	}, [day.arabicDate, isPastMaghrib, location]);
 	// ----------------------------------------
 	
-	// 1. ---  DASBOR HILAL (AWARENESS HARI ESOK)  ---
+	// 1. ---  DASHBOARD HILAL (AWARENESS HARI ESOK)  ---
 	useEffect(() => {
 		const lat = location?.lat;
 		const lon = location?.long;
 		
-		// 🔥 LOMPATAN WAKTU: Jika sudah lewat Maghrib, kita teropong hilal untuk BESOK sore!
 		let targetObservationDate = new Date(currentDate);
 		if (isPastMaghrib) {
 			targetObservationDate.setDate(targetObservationDate.getDate() + 1);
 		}
 		
 		const targetPrayerTimes = getPrayerTimes(targetObservationDate);
-		const maghrib = targetPrayerTimes?.maghrib;
+		const maghribLocal = targetPrayerTimes?.maghrib;
 		
-		if (!lat || !lon || !maghrib) return;
+		if (!lat || !lon || !maghribLocal) return;
 		
 		try {
-			const maghribDate = new Date(maghrib);
-			if (isNaN(maghribDate.getTime())) return;
-			
-			const data = getHilalData(maghribDate, lat, lon);
-            
-			const currentAlt = Number(data?.altitude ?? data?.alt ?? data?.moonAltitude ?? 0);
-			const currentElong = Number(data?.elongation ?? data?.elong ?? data?.moonElongation ?? 0);
-			
 			const targetAlt = Number(minAltitude) || 0;
 			const targetElong = Number(minElongation) || 0;
 			
-			data.isMabimsEligible = (currentAlt >= targetAlt) && (currentElong >= targetElong);
-            
-			setHilalInfo(data);
-			setHilalDebug(`Target Tgl: ${targetObservationDate.getDate()} | Alt:${currentAlt.toFixed(2)}° >= Tgt:${targetAlt}° ? ${data.isMabimsEligible}`); 
+			// ==========================================
+			// A. HITUNG HILAL LOKASI REAL (LOKAL)
+			// ==========================================
+			const localData = getHilalData(new Date(maghribLocal), lat, lon);
+			const currentAlt = Number(localData?.altitude ?? localData?.alt ?? localData?.moonAltitude ?? 0);
+			const currentElong = Number(localData?.elongation ?? localData?.elong ?? localData?.moonElongation ?? 0);
+			localData.isMabimsEligible = (currentAlt >= targetAlt) && (currentElong >= targetElong);
+			setHilalInfo(localData);
+			
+			// ==========================================
+			// B. HITUNG HILAL TITIK 0 KM (NASIONAL)
+			// ==========================================
+			// SHORCUT ASTRONOMI: Kita tidak perlu library 'adhan' lagi!
+			// 1 Derajat Bujur = perbedaan waktu rotasi bumi 4 menit.
+			const lonDiff = lat - zeroKmLon; // Selisih bujur lokal vs 0 KM
+			const timeOffsetMs = (lon - zeroKmLon) * 4 * 60 * 1000; 
+			
+			// Waktu Maghrib Sabang = Jam Maghrib Lokal + Selisih Menit
+			const maghribNational = new Date(maghribLocal.getTime() + timeOffsetMs);
+			
+			const nationalData = getHilalData(maghribNational, zeroKmLat, zeroKmLon);
+			const natAlt = Number(nationalData?.altitude ?? nationalData?.alt ?? nationalData?.moonAltitude ?? 0);
+			const natElong = Number(nationalData?.elongation ?? nationalData?.elong ?? nationalData?.moonElongation ?? 0);
+			nationalData.isMabimsEligible = (natAlt >= targetAlt) && (natElong >= targetElong);
+			setHilalInfoNational(nationalData);
 			
 			} catch (error: any) {
 			setHilalDebug("Error Dasbor: " + (error.message || "Unknown error"));
 		}
-		// Wajib pantau isPastMaghrib di sini!
-	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation]);
+	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation, zeroKmLat, zeroKmLon]);
 	
 	// 2. --- HILAL ---
 	useEffect(() => {
 		if (!useCustomHilal) {
 			setAutoAdjustment(0);
-			setTmDebug("TM: OFF (Standar Global)");
 			return;
 		}
 		
-		const lat = location?.lat;
-		const lon = location?.long;
-		if (!lat || !lon) return;
+		// 🔥 SAKLAR WILAYATUL HUKMI (Lokal vs Nasional)
+		const calcLat = useNationalDateCalc ? zeroKmLat : location?.lat;
+		const calcLon = useNationalDateCalc ? zeroKmLon : location?.long;
+		
+		if (!calcLat || !calcLon) return;
 		
 		try {
 			// Pastikan pakai tipe kalender yang dipilih user
@@ -328,13 +358,27 @@ export function Home() {
 			
 			while (safety < 6) { 
 				let day29 = new Date(mabimsStart);
-				day29.setDate(day29.getDate() + 28); // Lompat ke hari ke-29
+				day29.setDate(day29.getDate() + 28);
 				
-				const pt = getPrayerTimes(day29);
-				let maghrib = pt?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
+				// ?? SOLUSI MAGHRIB TANPA LIBRARY ADHAN ??
+				// Ambil jadwal maghrib lokal untuk tanggal 29 tersebut menggunakan fungsi bawaan Anda
+				const ptLocal = getPrayerTimes(day29);
+				let maghrib = ptLocal?.maghrib;
+				
+				// Jika data maghrib lokal tidak ditemukan (untuk amannya), set default ke jam 18:00
+				if (!maghrib) {
+					maghrib = new Date(day29);
+					maghrib.setHours(18, 0, 0, 0);
+				}
+				
+				// Jika mode Nasional aktif, geser jam maghrib lokal ke jam maghrib Sabang (Titik 0 KM)
+				if (useNationalDateCalc && location?.long) {
+					const timeOffsetMs = (location.long - zeroKmLon) * 4 * 60 * 1000;
+					maghrib = new Date(maghrib.getTime() + timeOffsetMs);
+				}
 				
 				// Teropong Hilal
-				const hilal = getHilalData(maghrib, lat, lon);
+				const hilal = getHilalData(maghrib, calcLat, calcLon);
 				const alt = Number(hilal?.altitude ?? hilal?.alt ?? hilal?.moonAltitude ?? 0);
 				const elong = Number(hilal?.elongation ?? hilal?.elong ?? hilal?.moonElongation ?? 0);
 				const tgtAlt = Number(minAltitude) || 0;
@@ -359,6 +403,9 @@ export function Home() {
 			const diffTime = currentTarget.getTime() - mabimsStart.getTime();
 			const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 			const mabimsDay = diffDays + 1;
+			
+			// 🔥 2. SUNTIKKAN KODE INI: Simpan data mutlak agar tidak ditipu Android
+			setAbsoluteMabimsDay(mabimsDay);
 			
 			// 4. Cari penyesuaian (Adjustment) untuk sinkronisasi sistem
 			let bestAdj = 0;
@@ -563,32 +610,57 @@ export function Home() {
 		</Text>
 		) : (
 		<Box>
+		{/* --- LOKASI SAAT INI (LOKAL) --- */}
+		<Text fontWeight="bold" mb="2" _light={{color: 'gray.600'}} _dark={{color: 'gray.400'}}>
+		📍 Posisi Real (Lokal)
+		</Text>
 		<HStack justifyContent="space-between" mb="1">
-		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Umur:</Text>
-		<Text fontWeight="bold">{hilalInfo.moonAgeHours.toFixed(1)} Jam</Text>
+		<Text fontSize="sm" _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Umur:</Text>
+		<Text fontSize="sm" fontWeight="bold">{hilalInfo.moonAgeHours.toFixed(1)} Jam</Text>
 		</HStack>
-		
 		<HStack justifyContent="space-between" mb="1">
-		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi:</Text>
-		<Text fontWeight="bold">{hilalInfo.moonAltitude.toFixed(2)}°</Text>
+		<Text fontSize="sm" _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi:</Text>
+		<Text fontSize="sm" fontWeight="bold">{hilalInfo.moonAltitude.toFixed(2)}°</Text>
+		</HStack>
+		<HStack justifyContent="space-between" mb="2">
+		<Text fontSize="sm" _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Elongasi:</Text>
+		<Text fontSize="sm" fontWeight="bold">{hilalInfo.elongation.toFixed(2)}°</Text>
 		</HStack>
 		
-		<HStack justifyContent="space-between" mb="3">
-		<Text _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Elongasi:</Text>
-		<Text fontWeight="bold">{hilalInfo.elongation.toFixed(2)}°</Text>
-		</HStack>
+		{/* --- TITIK 0 KM (NASIONAL) --- */}
+		{/* 🔥 UI AKAN HILANG JIKA SAKLAR NASIONAL DIMATIKAN 🔥 */}
+		{(hilalInfoNational && useNationalDateCalc) && (
+			<>
+			<Divider bg="gray.300" my="2" />
+			<Text fontWeight="bold" mb="2" _light={{color: 'gray.600'}} _dark={{color: 'gray.400'}}>
+			🇮🇩 Titik 0 KM (Ref. Tanggal)
+			</Text>
+			<HStack justifyContent="space-between" mb="1">
+			<Text fontSize="sm" _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Umur:</Text>
+			<Text fontSize="sm" fontWeight="bold">{hilalInfoNational.moonAgeHours.toFixed(1)} Jam</Text>
+			</HStack>
+			<HStack justifyContent="space-between" mb="1">
+			<Text fontSize="sm" _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Tinggi:</Text>
+			<Text fontSize="sm" fontWeight="bold">{hilalInfoNational.moonAltitude.toFixed(2)}°</Text>
+			</HStack>
+			<HStack justifyContent="space-between" mb="2">
+			<Text fontSize="sm" _light={{color: 'gray.700'}} _dark={{color: 'gray.300'}}>Elongasi:</Text>
+			<Text fontSize="sm" fontWeight="bold">{hilalInfoNational.elongation.toFixed(2)}°</Text>
+			</HStack>
+			</>
+		)}
 		
-		<Divider bg="gray.30" mb="1" />
+		<Divider bg="gray.300" my="2" />
 		
 		{/* 🔥 STATUS HIDDEN: Hanya tampil di tgl 29 & 30 🔥 */}
 		{isHilalWatchDay && (
 			<Text
-			color={hilalInfo.isMabimsEligible ? 'green.600' : 'red.500'}
+			color={(useNationalDateCalc ? hilalInfoNational?.isMabimsEligible : hilalInfo.isMabimsEligible) ? 'green.600' : 'red.500'}
 			fontWeight="bold"
 			textAlign="center"
 			>
-			{hilalInfo.isMabimsEligible 
-				? '✅ Maghrib [nanti] memenuhi Syarat (Visibilitas)' 
+			{(useNationalDateCalc ? hilalInfoNational?.isMabimsEligible : hilalInfo.isMabimsEligible) 
+				? '✅ Maghrib [nanti] memenuhi Syarat' 
 			: '❌ Belum Terlihat (Istikmal)'}
 			</Text>
 		)}

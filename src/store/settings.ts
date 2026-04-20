@@ -95,6 +95,9 @@ export type SettingsStore = {
 	USE_CUSTOM_HILAL_CRITERIA: boolean;
 	HILAL_MIN_ALTITUDE: number;
 	HILAL_MIN_ELONGATION: number;
+	USE_NATIONAL_DATE_CALC: boolean;
+	NATIONAL_ZERO_KM_LAT: number;
+	NATIONAL_ZERO_KM_LON: number;
 	// -------------------------------
 	computed: {
 		themeColor: Required<ColorMode>;
@@ -188,6 +191,9 @@ persist(
 	USE_CUSTOM_HILAL_CRITERIA: true, // Default-nya ON (pakai kalender MABIMS)
 	HILAL_MIN_ALTITUDE: 3.0,          // Default MABIMS Baru
 	HILAL_MIN_ELONGATION: 6.4,        // Default MABIMS Baru
+	USE_NATIONAL_DATE_CALC: true,
+	NATIONAL_ZERO_KM_LAT: 5.906105850196853,
+	NATIONAL_ZERO_KM_LON: 95.21688295092682,
 	// ------------------------------
 	computed: {
         get themeColor() {

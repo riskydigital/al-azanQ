@@ -115,6 +115,31 @@ to uninstall app while keeping data:
 adb shell cmd package uninstall -k com.github.meypod.al_azan
 ```
 
+📥 Installation & Updates (Recommended)
+--------------------------------------
+
+To automatically get the latest version and support updates directly from GitHub, we recommend using Obtainium. This ensures you always get the lastest release without any intermediaries.
+
+### How to Install via Obtainium:
+
+1. Download Obtainium: If you don't have it, download the app from Obtainium GitHub (https://github.com/ImranR98/Obtainium/releases).
+
+2. Add App: Open Obtainium and click the "Add App" button.
+
+3. Paste URL: Enter this repository URL: https://github.com/riskydigital/al-azanQ
+
+4. Configuration: Ensure the release detection option is enabled, then click "Add."
+
+5. Install: Click "Install" in the app list to download the latest APK.
+
+### Manual Installation Method:
+
+1. Go to the [Releases](https://www.google.com/search?q=https://github.com/riskydigital/al-azanQ/releases) section.
+
+2. Download the `app-release.apk` file for the latest release.
+
+3. Install it on your Android device (allow installation from unknown sources if prompted).
+
 ## Translations
 
 All translations are synced with [translation.io](https://translation.io/) with source code as single source of translation keys. It is only compiled during CI build for releases. Syncing is done manually when `lingui.config.js` file is configured and `yarn sync_and_purge` command is run.

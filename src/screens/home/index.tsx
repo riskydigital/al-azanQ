@@ -327,19 +327,17 @@ export function Home() {
 		// 🔥 SAKLAR WILAYATUL HUKMI (Lokal vs Nasional)
 		const calcLat = useNationalDateCalc ? zeroKmLat : location?.lat;
 		const calcLon = useNationalDateCalc ? zeroKmLon : location?.long;
-		
 		if (!calcLat || !calcLon) return;
 		
 		try {
-			// Pastikan pakai tipe kalender yang dipilih user
 			const calendarType = impactfulSettings.SELECTED_ARABIC_CALENDAR || 'islamic';
 			const formatter = new Intl.DateTimeFormat(`en-US-u-ca-${calendarType}`, { day: 'numeric' });
 			
-			// 1. Tancapkan Jangkar: Mundur 4 bulan ke belakang untuk mencari tanggal 1 Hijriah
-			let anchorDate = new Date(currentDate);
-			anchorDate.setHours(12, 0, 0, 0); 
+			// 🔥 KUNCI UTAMA: Gunakan Tanggal Real-Time (Today), bukan currentDate
+			const realToday = new Date(); 
+			let anchorDate = new Date(realToday);
 			anchorDate.setMonth(anchorDate.getMonth() - 4); 
-			anchorDate.setDate(1); 
+			anchorDate.setDate(1);
 			
 			let guard = 0;
 			while (guard < 60) {
@@ -408,11 +406,13 @@ export function Home() {
 			setAbsoluteMabimsDay(mabimsDay);
 			
 			// 4. Cari penyesuaian (Adjustment) untuk sinkronisasi sistem
+			// Saat menghitung bestAdj, tetap gunakan realToday agar adjustment konsisten
 			let bestAdj = 0;
 			let found = false;
 			for (let adj = -5; adj <= 5; adj++) {
-				let testD = new Date(currentTarget);
+				let testD = new Date(realToday);
 				testD.setDate(testD.getDate() + adj);
+				// Bandingkan dengan mabimsDay hasil simulasi hari ini
 				if (parseInt(formatter.format(testD), 10) === mabimsDay) {
 					bestAdj = adj; found = true; break;
 				}
@@ -433,10 +433,10 @@ export function Home() {
 			setAutoAdjustment(bestAdj);
 			
 			} catch (error: any) {
-			setTmDebug("TM Error: " + error.message);
 			setAutoAdjustment(0);
 		}
-	}, [currentDate, location, useCustomHilal, minAltitude, minElongation, impactfulSettings.SELECTED_ARABIC_CALENDAR]);
+	}, [location, useCustomHilal, minAltitude, minElongation, useNationalDateCalc]); 
+    // 🔥 HAPUS currentDate dari array pelatuk agar tidak berkedip saat ganti hari
 	// ---------------------------------
 	
 	useEffect(() => {

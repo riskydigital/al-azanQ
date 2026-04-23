@@ -182,7 +182,6 @@ export function Home() {
 	// 🔥 RADAR TIER 1 (UI) & TIER 2 (KALKULASI 5KM) 🔥
 	useEffect(() => {
 		const checkTime = () => {
-			// 🔥 KUNCI: Radar HANYA memantau Maghrib "Hari Ini" secara mutlak
 			const realToday = new Date();
 			const ptToday = getPrayerTimes(realToday);
 			const maghribTodayTime = ptToday?.maghrib?.getTime();
@@ -195,12 +194,9 @@ export function Home() {
 		const checkLocation = () => {
 			if (useLiveGps) {
 				LocationProvider.getCurrentPosition({
-					enableHighAccuracy: true,
-					timeout: 15000,
-				})
-				.then(loc => {
+					enableHighAccuracy: true, timeout: 15000,
+					}).then(loc => {
 					setLiveCoords({ lat: loc.latitude, long: loc.longitude });
-					
 					const prevLoc = calcSettings.getState().LOCATION;
 					const latDiff = Math.abs((prevLoc?.lat || 0) - loc.latitude);
 					const lonDiff = Math.abs((prevLoc?.long || 0) - loc.longitude);
@@ -208,75 +204,59 @@ export function Home() {
 					if (latDiff > 0.05 || lonDiff > 0.05) {
 						clearCache();
 						calcSettings.getState().setSetting('LOCATION', {
-							lat: loc.latitude,
-							long: loc.longitude,
-							label: '📍 Live GPS (Mudik)',
+							lat: loc.latitude, long: loc.longitude, label: '📍 Live GPS (Mudik)',
 						});
 					}
-				})
-				.catch((err) => console.log("Live GPS No Signal", err));
-			}
-		};
-		
-		checkTime();
-		checkLocation();
-		
-		// Timer pergantian hari instan saat sirine Maghrib berbunyi HARI INI
-		const realToday = new Date();
-		const ptToday = getPrayerTimes(realToday);
-		const maghribTodayTime = ptToday?.maghrib?.getTime() || 0;
-		let timer: NodeJS.Timeout;
-		
-		if (Date.now() < maghribTodayTime) {
-			timer = setTimeout(() => setIsPastMaghrib(true), maghribTodayTime - Date.now());
-		}
-		
-		const subscription = AppState.addEventListener('change', nextAppState => {
-			if (nextAppState === 'active') {
-				checkTime();
-				checkLocation();
-			}
-		});
-		
-		const interval = setInterval(() => {
+					}).catch((err) => console.log("Live GPS No Signal", err));
+					}
+				};
+			
 			checkTime();
 			checkLocation();
-		}, 1 * 60 * 1000); 
-		
-		return () => {
-			if (timer) clearTimeout(timer);
-			clearInterval(interval);
-			subscription.remove();
-		};
-        // 🔥 PELATUK DI-CLEAR! Tidak perlu memantau prayerTimes atau isNotToday lagi!
+			
+			const realToday = new Date();
+			const ptToday = getPrayerTimes(realToday);
+			const maghribTodayTime = ptToday?.maghrib?.getTime() || 0;
+			let timer: NodeJS.Timeout;
+			
+			if (maghribTodayTime && Date.now() < maghribTodayTime) {
+				timer = setTimeout(() => setIsPastMaghrib(true), maghribTodayTime - Date.now());
+			}
+			
+			const subscription = AppState.addEventListener('change', nextAppState => {
+				if (nextAppState === 'active') {
+					checkTime();
+					checkLocation();
+				}
+			});
+			
+			const interval = setInterval(() => {
+				checkTime();
+				checkLocation();
+			}, 1 * 60 * 1000); 
+			
+			return () => {
+				if (timer) clearTimeout(timer);
+				clearInterval(interval);
+				subscription.remove();
+			};
+			// 🔥 PASTIKAN: isNotToday ATAU currentDate TIDAK ADA DI DALAM ARRAY INI!
 	}, [useLiveGps]);
 	
-	
 	const day = useMemo(() => {
-		const details = getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib);
-		
-		// 🔥 3A. ISTIKMAL PATCH (ANTI DOUBLE 29) 🔥
-		// Jika MABIMS menghitung hari ini adalah hari ke-30 mutlak, 
-		// tapi kalender HP macet di 29, kita paksa ganti teksnya jadi 30!
-		if (useCustomHilal && absoluteMabimsDay === 30 && details.arabicDate.includes('29')) {
-			details.arabicDate = details.arabicDate.replace('29', '30').replace('٢٩', '٣٠');
-		}
-		
-		return details;
-	}, [currentDate, prayerTimes, autoAdjustment, isPastMaghrib, useCustomHilal, absoluteMabimsDay]);
+		// Bersih tanpa racun replace 30!
+		return getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib);
+	}, [currentDate, prayerTimes, autoAdjustment, isPastMaghrib]);
 	
 	const currentHijriDayStr = useMemo(() => {
-		// 🔥 3B. BYPASS DASHBOARD MABIMS 🔥
-		if (useCustomHilal && absoluteMabimsDay === 30) {
-			return "30"; // Paksa dasbor mengerti ini tanggal 30
-		}
-		
 		const targetDate = new Date(currentDate);
 		if (autoAdjustment !== 0) {
 			targetDate.setDate(targetDate.getDate() + autoAdjustment);
 		}
 		return getHijriDay(targetDate, isPastMaghrib);
-	}, [currentDate, autoAdjustment, isPastMaghrib, useCustomHilal, absoluteMabimsDay]);
+	}, [currentDate, autoAdjustment, isPastMaghrib]);
+	
+	
 	const isHilalWatchDay = useMemo(() => {
 		return currentHijriDayStr.includes('29') || 
 		currentHijriDayStr.includes('30') || 
@@ -348,7 +328,7 @@ export function Home() {
 		}
 	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation, zeroKmLat, zeroKmLon]);
 	
-	// 2. --- HILAL (SINKRONISASI IJTIMA' MIRRORING PTCQ) ---
+	// 2. --- HILAL ENGINE (MURNI, STABIL, TANPA IJTIMA JDN) ---
 	useEffect(() => {
 		if (!useCustomHilal) {
 			setAutoAdjustment(0);
@@ -363,111 +343,77 @@ export function Home() {
 			const calendarType = impactfulSettings.SELECTED_ARABIC_CALENDAR || 'islamic';
 			const formatter = new Intl.DateTimeFormat(`en-US-u-ca-${calendarType}`, { day: 'numeric' });
 			
-			const realToday = new Date(); 
-			const anchorDate = new Date(realToday);
-			anchorDate.setDate(anchorDate.getDate() - 45); // Mundur 45 hari (Sama persis dengan PTCQ.java)
+			// 🔥 1. JANGKAR MUTLAK: Selalu hitung dari Hari Ini Jam 12 Siang
+			const realToday = new Date();
+			realToday.setHours(12, 0, 0, 0);
 			
-			// 1. Temukan waktu Ijtima' bulan lalu
-			const jdAnchor = anchorDate.getTime() / 86400000 + 2440587.5;
-			const jdIjtimaPrev = calculateIjtimaBefore(jdAnchor);
+			// 2. Cari titik awal 4 bulan yang lalu
+			let anchorDate = new Date(realToday);
+			anchorDate.setMonth(anchorDate.getMonth() - 4);
+			anchorDate.setDate(1);
 			
-			// Ubah Ijtima' UT menjadi objek JS Date untuk perbandingan akurat
-			const dateIjtimaPrev = new Date((jdIjtimaPrev - 2440587.5) * 86400000);
-			
-			// 2. Tentukan hari H-29 yang sah (Bulan Lalu)
-			let localIjtimaDay = new Date(dateIjtimaPrev);
-			localIjtimaDay.setHours(12, 0, 0, 0); // Normalisasi ke siang hari lokal
-			
-			let ptI = getPrayerTimes(localIjtimaDay);
-			let maghribI = ptI?.maghrib || new Date(localIjtimaDay.setHours(18, 0, 0, 0));
-			
-			if (useNationalDateCalc && location?.long) {
-				const timeOffsetMs = (location.long - zeroKmLon) * 4 * 60 * 1000;
-				maghribI = new Date(maghribI.getTime() + timeOffsetMs);
+			let guard = 0;
+			while (guard < 60) {
+				if (parseInt(formatter.format(anchorDate), 10) === 1) break;
+				anchorDate.setDate(anchorDate.getDate() + 1);
+				guard++;
 			}
 			
-			let h29Date = new Date(localIjtimaDay);
-			
-			// 🔥 KOREKSI MUTLAK: Jika Waktu Ijtima > Waktu Maghrib, Rukyat geser ke esok hari!
-			if (dateIjtimaPrev.getTime() > maghribI.getTime()) {
-				h29Date.setDate(h29Date.getDate() + 1);
-			}
-			
-			// 3. Teropong Hilal pada H-29 bulan lalu
-			let maghribH29 = getPrayerTimes(h29Date)?.maghrib || new Date(h29Date.setHours(18, 0, 0, 0));
-			if (useNationalDateCalc && location?.long) {
-				const timeOffsetMs = (location.long - zeroKmLon) * 4 * 60 * 1000;
-				maghribH29 = new Date(maghribH29.getTime() + timeOffsetMs);
-			}
-			
-			const hilalPrev = getHilalData(maghribH29, calcLat, calcLon);
-			const isVisiblePrev = (Number(hilalPrev?.altitude || 0) >= Number(minAltitude)) && 
-			(Number(hilalPrev?.elongation || 0) >= Number(minElongation));
-			
-			// 4. Tetapkan titik mulai (Tanggal 1) bulan ini
-			let mabimsStart = new Date(h29Date);
-			mabimsStart.setDate(mabimsStart.getDate() + (isVisiblePrev ? 1 : 2));
-			mabimsStart.setHours(12, 0, 0, 0);
-			
-			// 5. Simulasi Maju ke Hari Ini
-			let currentTarget = new Date(realToday);
-			currentTarget.setHours(12, 0, 0, 0);
-			
+			// 3. Simulasi Maju ala MABIMS
+			let mabimsStart = new Date(anchorDate);
 			let safety = 0;
 			let lastAlt = 0;
 			
-			while (safety < 3) {
+			while (safety < 6) {
 				let day29 = new Date(mabimsStart);
 				day29.setDate(day29.getDate() + 28);
 				
-				let ptLocal = getPrayerTimes(day29);
-				let maghribCur = ptLocal?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
+				const ptLocal = getPrayerTimes(day29);
+				let maghrib = ptLocal?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
 				
 				if (useNationalDateCalc && location?.long) {
 					const timeOffsetMs = (location.long - zeroKmLon) * 4 * 60 * 1000;
-					maghribCur = new Date(maghribCur.getTime() + timeOffsetMs);
+					maghrib = new Date(maghrib.getTime() + timeOffsetMs);
 				}
 				
-				const hilalCur = getHilalData(maghribCur, calcLat, calcLon);
-				const alt = Number(hilalCur?.altitude || 0);
-				const elong = Number(hilalCur?.elongation || 0);
+				const hilal = getHilalData(maghrib, calcLat, calcLon);
+				const alt = Number(hilal?.altitude ?? hilal?.alt ?? hilal?.moonAltitude ?? 0);
+				const elong = Number(hilal?.elongation ?? hilal?.elong ?? hilal?.moonElongation ?? 0);
 				
-				const isVisibleCur = (alt >= Number(minAltitude)) && (elong >= Number(minElongation));
-				const monthLength = isVisibleCur ? 29 : 30;
+				const isVisible = (alt >= (Number(minAltitude) || 0)) && (elong >= (Number(minElongation) || 0));
+				const monthLength = isVisible ? 29 : 30;
 				
 				let nextMonthStart = new Date(mabimsStart);
 				nextMonthStart.setDate(nextMonthStart.getDate() + monthLength);
 				
-				// Jika "Target Hari Ini" jatuh di dalam rentang bulan ini, STOP!
-				if (currentTarget.getTime() < nextMonthStart.getTime()) {
+				// Break jika sudah melewati atau pas di hari ini
+				if (realToday.getTime() < nextMonthStart.getTime()) {
 					lastAlt = alt;
 					break;
 				}
-				
 				mabimsStart = nextMonthStart;
 				safety++;
 			}
 			
-			// 6. Hitung nilai hari mutlak
-			const diffTime = currentTarget.getTime() - mabimsStart.getTime();
-			const currentMabimsDay = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+			// 4. Hitung MABIMS hari ini
+			const diffTime = realToday.getTime() - mabimsStart.getTime();
+			const mabimsDay = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+			setAbsoluteMabimsDay(mabimsDay);
 			
-			setAbsoluteMabimsDay(currentMabimsDay);
-			
-			// 7. Hitung Adjustment untuk Sinkronisasi UI
+			// 5. Cari Adjustment Murni
 			let bestAdj = 0;
 			let found = false;
 			for (let adj = -5; adj <= 5; adj++) {
 				let testD = new Date(realToday);
 				testD.setDate(testD.getDate() + adj);
-				if (parseInt(formatter.format(testD), 10) === currentMabimsDay) {
+				if (parseInt(formatter.format(testD), 10) === mabimsDay) {
 					bestAdj = adj; found = true; break;
 				}
 			}
 			
-			if (!found && currentMabimsDay === 30) {
+			if (!found && mabimsDay === 30) {
 				for (let adj = -5; adj <= 5; adj++) {
-					let testD = new Date(currentTarget);
+					let testD = new Date(realToday);
 					testD.setDate(testD.getDate() + adj);
 					if (parseInt(formatter.format(testD), 10) === 29) {
 						bestAdj = adj; break;
@@ -475,14 +421,13 @@ export function Home() {
 				}
 			}
 			
-			setTmDebug(`MABIMS Mutlak: ${currentMabimsDay} | Adj: ${bestAdj}\nAlt 29th: ${lastAlt.toFixed(2)}`);
+			setTmDebug(`IR: ON | MABIMS Tgl ${mabimsDay} | Adj=${bestAdj}\nAlt 29th: ${lastAlt.toFixed(2)} vs Tgt: ${minAltitude}`);
 			setAutoAdjustment(bestAdj);
 			
 			} catch (error: any) {
 			setAutoAdjustment(0);
 		}
 	}, [location, useCustomHilal, minAltitude, minElongation, useNationalDateCalc, impactfulSettings.SELECTED_ARABIC_CALENDAR]);
-    // 🔥 HAPUS currentDate dari array pelatuk agar tidak berkedip saat ganti hari
 	// ---------------------------------
 	
 	useEffect(() => {

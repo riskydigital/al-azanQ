@@ -3,9 +3,9 @@ import { getHijriDay } from '@/utils/date';
 import {clearCache} from '@/store/adhan_calc_cache';
 import LocationProvider from 'react-native-get-location';
 import {t} from '@lingui/macro';
-import {Button, HStack, ScrollView, Stack, Text, Box} from 'native-base'; // Tambahkan Box
-import {useCallback, useEffect, useMemo, useState} from 'react'; // Tambahkan useState
-import {AppState, Linking} from 'react-native'; // 🔥 Tambahkan Linking
+import {Button, HStack, ScrollView, Stack, Text, Box} from 'native-base';
+import {useCallback, useEffect, useMemo, useState} from 'react';
+import {AppState, Linking} from 'react-native';
 import {getHilalData, HilalInfo} from '@/utils/hilalCalculator';
 import {updateWidgets} from '@/tasks/update_widgets';
 import {
@@ -50,7 +50,6 @@ type DayDetails = {
 	arabicDate: string;
 };
 
-
 // Helper JDN & Ijtima (Identik dengan logika PTCQ.java)
 const dateToJDN = (d: number, m: number, y: number) => {
     let year = y, month = m;
@@ -75,7 +74,36 @@ const calculateIjtimaBefore = (jd: number) => {
     return jde; // Mengembalikan JDN Ijtima (UT)
 };
 
-
+// Helper Astronomi Murni untuk Sunset Sabang (Bypass Library Adhan)
+const getAccurateMaghrib = (targetDate: Date, lat: number, lon: number): Date => {
+    const rad = Math.PI / 180;
+    const start = new Date(targetDate.getFullYear(), 0, 0);
+    const dayOfYear = Math.floor((targetDate.getTime() - start.getTime()) / 86400000);
+	
+    // Deklinasi Matahari & Equation of Time
+    const B = rad * (360 / 365) * (dayOfYear - 81);
+    const declination = 23.45 * Math.sin(B);
+    const EoT = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+	
+    const latRad = lat * rad;
+    const decRad = declination * rad;
+    const altRad = -0.833 * rad; // Refraksi atmosfer saat Sunset standar
+    
+    const cosH0 = (Math.sin(altRad) - Math.sin(latRad) * Math.sin(decRad)) / (Math.cos(latRad) * Math.cos(decRad));
+	
+    // Jika terjadi anomali (kutub), fallback ke 18:00
+    if (cosH0 < -1 || cosH0 > 1) return new Date(targetDate.setHours(18, 0, 0, 0));
+	
+    const H0 = Math.acos(cosH0) / rad;
+    const sunsetUTC = 12 - (lon / 15) + (H0 / 15) - (EoT / 60);
+	
+    const result = new Date(targetDate);
+    result.setUTCHours(Math.floor(sunsetUTC));
+    result.setUTCMinutes(Math.floor((sunsetUTC % 1) * 60));
+    result.setUTCSeconds(0);
+	
+    return result;
+};
 
 // Tambahkan isPastMaghrib sebagai parameter ke-4
 function getDayDetails(date: Date, maghribTime?: Date, autoAdjustment: number = 0, isPastMaghrib: boolean = false): DayDetails {
@@ -139,7 +167,6 @@ export function Home() {
 	const [hilalInfo, setHilalInfo] = useState<HilalInfo | null>(null);
 	const [hilalDebug, setHilalDebug] = useState<string>("Inisialisasi awal...");
 	const [autoAdjustment, setAutoAdjustment] = useState<number>(0);
-	// 🔥 1. TAMBAHKAN STATE INI:
 	const [absoluteMabimsDay, setAbsoluteMabimsDay] = useState<number>(0);
 	const [tmDebug, setTmDebug] = useState<string>("TM: Loading...");
 	// 🔥 STATE KHUSUS UNTUK TEKS SATELIT (TIER 1)
@@ -149,6 +176,20 @@ export function Home() {
 	const useCustomHilal = useStore(settings, s => s.USE_CUSTOM_HILAL_CRITERIA);
 	const minAltitude = useStore(settings, s => s.HILAL_MIN_ALTITUDE);
 	const minElongation = useStore(settings, s => s.HILAL_MIN_ELONGATION);
+
+	// 🔥 PENGATURAN KOMPENSASI TOPO-GEO BMKG
+	// Tambahkan fallback default jika pengaturan belum diset oleh user
+	const useTopoGeoCompensation = useStore(settings, s => s.USE_TOPO_GEO_COMPENSATION ?? true);
+	const compensationAltitude = useStore(settings, s => s.COMPENSATION_ALTITUDE ?? -0.05);
+	const compensationElongation = useStore(settings, s => s.COMPENSATION_ELONGATION ?? 0.65);
+
+	// Resolusi nilai kalibrasi secara reaktif berdasarkan status saklar On/Off
+	const BMKG_CALIBRATION = useMemo(() => {
+		return {
+			altitude: useTopoGeoCompensation ? Number(compensationAltitude) : 0,
+			elongation: useTopoGeoCompensation ? Number(compensationElongation) : 0,
+		};
+	}, [useTopoGeoCompensation, compensationAltitude, compensationElongation]);
 	// ---------------------------------------------------
 	
 	// 🔥 ALARM PENDETEKSI MAGHRIB REAL-TIME & LIVE GPS 🔥
@@ -207,54 +248,63 @@ export function Home() {
 							lat: loc.latitude, long: loc.longitude, label: '📍 Live GPS (Mudik)',
 						});
 					}
-					}).catch((err) => console.log("Live GPS No Signal", err));
-					}
-				};
-			
-			checkTime();
-			checkLocation();
-			
-			const realToday = new Date();
-			const ptToday = getPrayerTimes(realToday);
-			const maghribTodayTime = ptToday?.maghrib?.getTime() || 0;
-			let timer: NodeJS.Timeout;
-			
-			if (maghribTodayTime && Date.now() < maghribTodayTime) {
-				timer = setTimeout(() => setIsPastMaghrib(true), maghribTodayTime - Date.now());
+				}).catch((err) => console.log("Live GPS No Signal", err));
 			}
-			
-			const subscription = AppState.addEventListener('change', nextAppState => {
-				if (nextAppState === 'active') {
-					checkTime();
-					checkLocation();
-				}
-			});
-			
-			const interval = setInterval(() => {
+		};
+		
+		checkTime();
+		checkLocation();
+		
+		const realToday = new Date();
+		const ptToday = getPrayerTimes(realToday);
+		const maghribTodayTime = ptToday?.maghrib?.getTime() || 0;
+		let timer: NodeJS.Timeout;
+		
+		if (maghribTodayTime && Date.now() < maghribTodayTime) {
+			timer = setTimeout(() => setIsPastMaghrib(true), maghribTodayTime - Date.now());
+		}
+		
+		const subscription = AppState.addEventListener('change', nextAppState => {
+			if (nextAppState === 'active') {
 				checkTime();
 				checkLocation();
-			}, 1 * 60 * 1000); 
-			
-			return () => {
-				if (timer) clearTimeout(timer);
-				clearInterval(interval);
-				subscription.remove();
-			};
-			// 🔥 PASTIKAN: isNotToday ATAU currentDate TIDAK ADA DI DALAM ARRAY INI!
+			}
+		});
+		
+		const interval = setInterval(() => {
+			checkTime();
+			checkLocation();
+		}, 1 * 60 * 1000); 
+		
+		return () => {
+			if (timer) clearTimeout(timer);
+			clearInterval(interval);
+			subscription.remove();
+		};
+		// 🔥 PASTIKAN: isNotToday ATAU currentDate TIDAK ADA DI DALAM ARRAY INI!
 	}, [useLiveGps]);
 	
 	const day = useMemo(() => {
-		// Bersih tanpa racun replace 30!
-		return getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib);
-	}, [currentDate, prayerTimes, autoAdjustment, isPastMaghrib]);
+		const details = getDayDetails(currentDate, prayerTimes?.maghrib, autoAdjustment, isPastMaghrib);
+		// 🔥 UI PATCH: Menampilkan 30 dengan aman tanpa freeze!
+		if (useCustomHilal && absoluteMabimsDay === 30) {
+			details.arabicDate = details.arabicDate.replace('29', '30').replace('٢٩', '٣٠');
+		}
+		return details;
+	}, [currentDate, prayerTimes, autoAdjustment, isPastMaghrib, useCustomHilal, absoluteMabimsDay]);
 	
 	const currentHijriDayStr = useMemo(() => {
 		const targetDate = new Date(currentDate);
 		if (autoAdjustment !== 0) {
 			targetDate.setDate(targetDate.getDate() + autoAdjustment);
 		}
-		return getHijriDay(targetDate, isPastMaghrib);
-	}, [currentDate, autoAdjustment, isPastMaghrib]);
+		let str = getHijriDay(targetDate, isPastMaghrib);
+		// 🔥 UI PATCH untuk string murni
+		if (useCustomHilal && absoluteMabimsDay === 30) {
+			str = str.replace('29', '30').replace('٢٩', '٣٠');
+		}
+		return str;
+	}, [currentDate, autoAdjustment, isPastMaghrib, useCustomHilal, absoluteMabimsDay]);
 	
 	
 	const isHilalWatchDay = useMemo(() => {
@@ -301,32 +351,38 @@ export function Home() {
 			// A. HITUNG HILAL LOKASI REAL (LOKAL)
 			// ==========================================
 			const localData = getHilalData(new Date(maghribLocal), lat, lon);
-			const currentAlt = Number(localData?.altitude ?? localData?.alt ?? localData?.moonAltitude ?? 0);
-			const currentElong = Number(localData?.elongation ?? localData?.elong ?? localData?.moonElongation ?? 0);
+			
+			// Terapkan Kalibrasi BMKG
+			const currentAlt = Number(localData?.altitude ?? localData?.alt ?? localData?.moonAltitude ?? 0) + BMKG_CALIBRATION.altitude;
+			const currentElong = Number(localData?.elongation ?? localData?.elong ?? localData?.moonElongation ?? 0) + BMKG_CALIBRATION.elongation;
+			
+			// Tulis ulang nilai agar UI menampilkannya dengan benar
+			localData.moonAltitude = currentAlt;
+			localData.elongation = currentElong;
 			localData.isMabimsEligible = (currentAlt >= targetAlt) && (currentElong >= targetElong);
 			setHilalInfo(localData);
 			
 			// ==========================================
 			// B. HITUNG HILAL TITIK 0 KM (NASIONAL)
 			// ==========================================
-			// SHORCUT ASTRONOMI: Kita tidak perlu library 'adhan' lagi!
-			// 1 Derajat Bujur = perbedaan waktu rotasi bumi 4 menit.
-			const lonDiff = lat - zeroKmLon; // Selisih bujur lokal vs 0 KM
-			const timeOffsetMs = (lon - zeroKmLon) * 4 * 60 * 1000; 
-			
-			// Waktu Maghrib Sabang = Jam Maghrib Lokal + Selisih Menit
-			const maghribNational = new Date(maghribLocal.getTime() + timeOffsetMs);
+			const maghribNational = getAccurateMaghrib(targetObservationDate, Number(zeroKmLat), Number(zeroKmLon));
 			
 			const nationalData = getHilalData(maghribNational, zeroKmLat, zeroKmLon);
-			const natAlt = Number(nationalData?.altitude ?? nationalData?.alt ?? nationalData?.moonAltitude ?? 0);
-			const natElong = Number(nationalData?.elongation ?? nationalData?.elong ?? nationalData?.moonElongation ?? 0);
+			
+			// Terapkan Kalibrasi BMKG
+			const natAlt = Number(nationalData?.altitude ?? nationalData?.alt ?? nationalData?.moonAltitude ?? 0) + BMKG_CALIBRATION.altitude;
+			const natElong = Number(nationalData?.elongation ?? nationalData?.elong ?? nationalData?.moonElongation ?? 0) + BMKG_CALIBRATION.elongation;
+			
+			// Tulis ulang nilai
+			nationalData.moonAltitude = natAlt;
+			nationalData.elongation = natElong;
 			nationalData.isMabimsEligible = (natAlt >= targetAlt) && (natElong >= targetElong);
 			setHilalInfoNational(nationalData);
 			
 			} catch (error: any) {
 			setHilalDebug("Error Dasbor: " + (error.message || "Unknown error"));
 		}
-	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation, zeroKmLat, zeroKmLon]);
+	}, [currentDate, isPastMaghrib, prayerTimes, location, minAltitude, minElongation, zeroKmLat, zeroKmLon, BMKG_CALIBRATION]);
 	
 	// 2. --- HILAL ENGINE (MURNI, STABIL, TANPA IJTIMA JDN) ---
 	useEffect(() => {
@@ -343,12 +399,16 @@ export function Home() {
 			const calendarType = impactfulSettings.SELECTED_ARABIC_CALENDAR || 'islamic';
 			const formatter = new Intl.DateTimeFormat(`en-US-u-ca-${calendarType}`, { day: 'numeric' });
 			
-			// 🔥 1. JANGKAR MUTLAK: Selalu hitung dari Hari Ini Jam 12 Siang
-			const realToday = new Date();
-			realToday.setHours(12, 0, 0, 0);
+			// 🔥 1. JANGKAR MUTLAK: Hitung dari Hari yang SEDANG DILIHAT!
+			// Hal ini menjamin navigasi tanggal Anda presisi ke mana pun Anda geser kalendernya
+			const viewedDate = new Date(currentDate);
+			if (isPastMaghrib) {
+				viewedDate.setDate(viewedDate.getDate() + 1);
+			}
+			viewedDate.setHours(12, 0, 0, 0);
 			
 			// 2. Cari titik awal 4 bulan yang lalu
-			let anchorDate = new Date(realToday);
+			let anchorDate = new Date(viewedDate);
 			anchorDate.setMonth(anchorDate.getMonth() - 4);
 			anchorDate.setDate(1);
 			
@@ -368,17 +428,21 @@ export function Home() {
 				let day29 = new Date(mabimsStart);
 				day29.setDate(day29.getDate() + 28);
 				
-				const ptLocal = getPrayerTimes(day29);
-				let maghrib = ptLocal?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
-				
-				if (useNationalDateCalc && location?.long) {
-					const timeOffsetMs = (location.long - zeroKmLon) * 4 * 60 * 1000;
-					maghrib = new Date(maghrib.getTime() + timeOffsetMs);
+				let maghrib;
+				if (useNationalDateCalc && zeroKmLat && zeroKmLon) {
+					// Gunakan Helper Astronomi untuk Maghrib Sabang
+					maghrib = getAccurateMaghrib(day29, Number(zeroKmLat), Number(zeroKmLon));
+					} else {
+					// Gunakan Maghrib Lokal
+					const ptLocal = getPrayerTimes(day29);
+					maghrib = ptLocal?.maghrib || new Date(day29.setHours(18, 0, 0, 0));
 				}
 				
 				const hilal = getHilalData(maghrib, calcLat, calcLon);
-				const alt = Number(hilal?.altitude ?? hilal?.alt ?? hilal?.moonAltitude ?? 0);
-				const elong = Number(hilal?.elongation ?? hilal?.elong ?? hilal?.moonElongation ?? 0);
+				
+				// 🔥 TERAPKAN KALIBRASI KE MESIN PENANGGALAN
+				const alt = Number(hilal?.altitude ?? hilal?.alt ?? hilal?.moonAltitude ?? 0) + BMKG_CALIBRATION.altitude;
+				const elong = Number(hilal?.elongation ?? hilal?.elong ?? hilal?.moonElongation ?? 0) + BMKG_CALIBRATION.elongation;
 				
 				const isVisible = (alt >= (Number(minAltitude) || 0)) && (elong >= (Number(minElongation) || 0));
 				const monthLength = isVisible ? 29 : 30;
@@ -386,8 +450,8 @@ export function Home() {
 				let nextMonthStart = new Date(mabimsStart);
 				nextMonthStart.setDate(nextMonthStart.getDate() + monthLength);
 				
-				// Break jika sudah melewati atau pas di hari ini
-				if (realToday.getTime() < nextMonthStart.getTime()) {
+				// Break jika sudah melewati atau pas di hari yang DI-VIEW
+				if (viewedDate.getTime() < nextMonthStart.getTime()) {
 					lastAlt = alt;
 					break;
 				}
@@ -395,16 +459,16 @@ export function Home() {
 				safety++;
 			}
 			
-			// 4. Hitung MABIMS hari ini
-			const diffTime = realToday.getTime() - mabimsStart.getTime();
+			// 4. Hitung MABIMS hari yang dilihat
+			const diffTime = viewedDate.getTime() - mabimsStart.getTime();
 			const mabimsDay = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-			setAbsoluteMabimsDay(mabimsDay);
+			setAbsoluteMabimsDay(mabimsDay); // Nilai ini akan memberi tahu UI jika tanggal adalah 30
 			
 			// 5. Cari Adjustment Murni
 			let bestAdj = 0;
 			let found = false;
 			for (let adj = -5; adj <= 5; adj++) {
-				let testD = new Date(realToday);
+				let testD = new Date(viewedDate);
 				testD.setDate(testD.getDate() + adj);
 				if (parseInt(formatter.format(testD), 10) === mabimsDay) {
 					bestAdj = adj; found = true; break;
@@ -413,8 +477,9 @@ export function Home() {
 			
 			if (!found && mabimsDay === 30) {
 				for (let adj = -5; adj <= 5; adj++) {
-					let testD = new Date(realToday);
+					let testD = new Date(viewedDate);
 					testD.setDate(testD.getDate() + adj);
+					// Jika MABIMS=30, paksa Android mencetak 29 (nanti ditimpa oleh UI Patch kita di atas)
 					if (parseInt(formatter.format(testD), 10) === 29) {
 						bestAdj = adj; break;
 					}
@@ -427,7 +492,8 @@ export function Home() {
 			} catch (error: any) {
 			setAutoAdjustment(0);
 		}
-	}, [location, useCustomHilal, minAltitude, minElongation, useNationalDateCalc, impactfulSettings.SELECTED_ARABIC_CALENDAR]);
+	// 🔥 PENTING: Pelatuk ini WAJIB diisi dengan currentDate dan isPastMaghrib
+	}, [currentDate, isPastMaghrib, location, useCustomHilal, minAltitude, minElongation, useNationalDateCalc, impactfulSettings.SELECTED_ARABIC_CALENDAR, BMKG_CALIBRATION]);
 	// ---------------------------------
 	
 	useEffect(() => {

@@ -98,6 +98,11 @@ export type SettingsStore = {
 	USE_NATIONAL_DATE_CALC: boolean;
 	NATIONAL_ZERO_KM_LAT: number;
 	NATIONAL_ZERO_KM_LON: number;
+	
+	USE_TOPO_GEO_COMPENSATION: boolean;
+	COMPENSATION_ALTITUDE: number;
+	COMPENSATION_ELONGATION: number;
+	
 	// -------------------------------
 	computed: {
 		themeColor: Required<ColorMode>;
@@ -194,6 +199,11 @@ persist(
 	USE_NATIONAL_DATE_CALC: true,
 	NATIONAL_ZERO_KM_LAT: 5.906105850196853,
 	NATIONAL_ZERO_KM_LON: 95.21688295092682,
+	
+	USE_TOPO_GEO_COMPENSATION: true,
+	COMPENSATION_ALTITUDE: -0.05,
+	COMPENSATION_ELONGATION: 0.65,
+	
 	// ------------------------------
 	computed: {
         get themeColor() {
